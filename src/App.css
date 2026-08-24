@@ -1,0 +1,281 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  min-height: 100vh;
+  padding: 20px;
+}
+
+#root {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.app {
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  overflow: hidden;
+}
+
+.header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 24px;
+  text-align: center;
+}
+
+.header h1 {
+  font-size: 32px;
+  margin-bottom: 8px;
+}
+
+.header p {
+  opacity: 0.9;
+  font-size: 14px;
+}
+
+.content {
+  padding: 32px;
+}
+
+.progress-bar {
+  background: #f3f4f6;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 24px;
+}
+
+.progress-fill {
+  background: linear-gradient(90deg, #667eea, #764ba2);
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.stat-card {
+  background: #f9fafb;
+  padding: 16px;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.stat-value {
+  font-size: 28px;
+  font-weight: bold;
+  color: #667eea;
+  display: block;
+}
+
+.stat-label {
+  font-size: 14px;
+  color: #6b7280;
+  margin-top: 4px;
+}
+
+.card {
+  background: white;
+  border: 2px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 48px;
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.character {
+  font-size: 120px;
+  font-weight: bold;
+  color: #1f2937;
+  line-height: 1;
+  margin: 20px 0;
+}
+
+.pinyin {
+  font-size: 32px;
+  color: #667eea;
+  margin: 16px 0;
+}
+
+.meaning {
+  font-size: 20px;
+  color: #6b7280;
+  margin: 16px 0;
+}
+
+.input-group {
+  margin: 24px 0;
+}
+
+.input-group input {
+  width: 100%;
+  font-size: 24px;
+  padding: 16px;
+  border: 2px solid #e5e7eb;
+  border-radius: 8px;
+  text-align: center;
+  transition: border-color 0.2s;
+}
+
+.input-group input:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.choices {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin: 24px 0;
+}
+
+.choice-btn {
+  font-size: 48px;
+  padding: 32px;
+  border: 2px solid #e5e7eb;
+  border-radius: 12px;
+  background: white;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.choice-btn:hover {
+  border-color: #667eea;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+}
+
+.choice-btn:active {
+  transform: translateY(0);
+}
+
+.btn {
+  padding: 16px 32px;
+  font-size: 18px;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.btn-secondary {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.btn-secondary:hover {
+  background: #e5e7eb;
+}
+
+.btn-group {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 24px;
+}
+
+.placement-options {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 24px 0;
+}
+
+.placement-btn {
+  padding: 20px;
+  font-size: 18px;
+  border: 2px solid #e5e7eb;
+  border-radius: 8px;
+  background: white;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: left;
+}
+
+.placement-btn:hover {
+  border-color: #667eea;
+  transform: translateX(4px);
+}
+
+.feedback {
+  padding: 16px;
+  border-radius: 8px;
+  margin: 16px 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.feedback-correct {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.feedback-incorrect {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.audio-btn {
+  background: #667eea;
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 64px;
+  height: 64px;
+  font-size: 28px;
+  cursor: pointer;
+  margin: 16px auto;
+  display: block;
+  transition: all 0.2s;
+}
+
+.audio-btn:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.session-complete {
+  text-align: center;
+  padding: 32px;
+}
+
+.session-complete h2 {
+  font-size: 32px;
+  color: #1f2937;
+  margin-bottom: 16px;
+}
+
+.session-complete p {
+  font-size: 18px;
+  color: #6b7280;
+  margin-bottom: 24px;
+}
+
+.loading {
+  text-align: center;
+  padding: 48px;
+  font-size: 18px;
+  color: #6b7280;
+}
