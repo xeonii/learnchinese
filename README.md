@@ -6,11 +6,11 @@ A 5–15 minute daily session for heritage Mandarin speakers: attach 汉字 to w
 
 ## How a session works
 
-Open the app, tap **开始练习**. There is no drill menu.
+Open the app, tap **Start practice**. There is no drill menu.
 
-1. **Intro** — huge 字, example word, audio if a Chinese voice exists.  
-   我会这个字 / 学习 / 跳过
-2. **Recall** — type pinyin (`ni3` or `nǐ`) or listen and pick the 字 among lookalikes/homophones.
+1. **Intro** — huge character, example word, audio.  
+   I already read this / Learn it / Skip — I don’t know this word
+2. **Recall** — type pinyin (`ni3` or `nǐ`) or listen and pick the character among lookalikes/homophones.
 3. **Same-day relearn** — misses come back in about a minute, not tomorrow.
 4. Stop at ~12 minutes or when the queue is empty.
 
