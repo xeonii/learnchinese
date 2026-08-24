@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import charactersData from './data/characters.json';
-import { speakChinese, onVoicesChanged } from './audio.js';
+import { speakChinese, canPlayAudio } from './audio.js';
 import { pinyinMatches } from './pinyin.js';
 import {
   DAILY_NEW_LIMIT,
@@ -30,7 +30,6 @@ function formatMs(ms) {
 export default function App() {
   const [cards, setCards] = useState([]);
   const [meta, setMeta] = useState({ streak: 0, lastSessionDate: null });
-  const [hasVoice, setHasVoice] = useState(false);
   const [ready, setReady] = useState(false);
   const [screen, setScreen] = useState('home');
   const [item, setItem] = useState(null);
@@ -53,7 +52,6 @@ export default function App() {
       setCards(initializeCards(charactersData));
     }
     setReady(true);
-    return onVoicesChanged(setHasVoice);
   }, []);
 
   useEffect(() => {
@@ -77,7 +75,7 @@ export default function App() {
       return;
     }
     const ctx = {
-      hasVoice,
+      hasVoice: canPlayAudio(),
       intros: nextSession.intros,
       learnedNew: learnedNewCount(nextCards, now),
       promptIndex: nextSession.promptIndex,
@@ -97,7 +95,7 @@ export default function App() {
     setRevealed(false);
     setFeedback(null);
     setChoices(nxt.type === 'listen' ? choicesFor(nxt.card, nextCards) : []);
-    if (nxt.type === 'listen') {
+    if (nxt.type === 'listen' || nxt.type === 'intro') {
       speakChinese(nxt.card.word || nxt.card.char);
     }
   }
@@ -153,7 +151,7 @@ export default function App() {
     setFeedback(correct ? 'correct' : 'incorrect');
     setRevealed(true);
     setCards(replaceCard(cards, updated));
-    if (hasVoice) speakChinese(item.card.word || item.card.char);
+    speakChinese(item.card.word || item.card.char);
     setSession({
       ...session,
       reviewed: session.reviewed + 1,
@@ -224,7 +222,6 @@ export default function App() {
           <IntroCard
             card={item.card}
             canLearn={item.canLearn}
-            hasVoice={hasVoice}
             onChoice={handleIntro}
           />
         )}
@@ -235,7 +232,6 @@ export default function App() {
             setInput={setInput}
             revealed={revealed}
             feedback={feedback}
-            hasVoice={hasVoice}
             onSubmit={handlePinyinSubmit}
             onContinue={handleContinue}
           />
@@ -246,7 +242,6 @@ export default function App() {
             choices={choices}
             revealed={revealed}
             feedback={feedback}
-            hasVoice={hasVoice}
             onPick={(ch) => grade(ch === item.card.char)}
             onContinue={handleContinue}
           />
@@ -277,9 +272,6 @@ export default function App() {
         <p className="muted">
           已认识 {counts.known} / {counts.total} · 课标基本字 300 + 常用字
         </p>
-        {!hasVoice && (
-          <p className="warn">这个浏览器没有中文语音。今天只做看字写拼音；换 Chrome / Edge 可听词选字。</p>
-        )}
       </section>
       <footer>
         <button className="text-btn" onClick={handleReset}>清除进度</button>
@@ -288,20 +280,14 @@ export default function App() {
   );
 }
 
-function IntroCard({ card, canLearn, hasVoice, onChoice }) {
-  useEffect(() => {
-    if (hasVoice) speakChinese(card.word || card.char);
-  }, [card, hasVoice]);
-
+function IntroCard({ card, canLearn, onChoice }) {
   return (
     <article className="card">
       <p className="prompt">这个字，你会吗？</p>
       <div className="han">{card.char}</div>
       <p className="word">{card.word}</p>
       <p className="meaning">{card.meaning}</p>
-      {hasVoice && (
-        <button className="ghost" onClick={() => speakChinese(card.word || card.char)}>再听一遍</button>
-      )}
+      <button className="ghost" onClick={() => speakChinese(card.word || card.char)}>再听一遍</button>
       <div className="stack">
         <button className="secondary" onClick={() => onChoice('known')}>我会这个字</button>
         {canLearn ? (
@@ -315,7 +301,7 @@ function IntroCard({ card, canLearn, hasVoice, onChoice }) {
   );
 }
 
-function ReadCard({ card, input, setInput, revealed, feedback, hasVoice, onSubmit, onContinue }) {
+function ReadCard({ card, input, setInput, revealed, feedback, onSubmit, onContinue }) {
   return (
     <article className="card">
       <p className="prompt">拼音怎么写？</p>
@@ -343,21 +329,19 @@ function ReadCard({ card, input, setInput, revealed, feedback, hasVoice, onSubmi
           <button className="primary" type="submit">提交</button>
         </form>
       ) : (
-        <Reveal card={card} feedback={feedback} hasVoice={hasVoice} onContinue={onContinue} />
+        <Reveal card={card} feedback={feedback} onContinue={onContinue} />
       )}
     </article>
   );
 }
 
-function ListenCard({ card, choices, revealed, feedback, hasVoice, onPick, onContinue }) {
+function ListenCard({ card, choices, revealed, feedback, onPick, onContinue }) {
   return (
     <article className="card">
       <p className="prompt">听词，选出汉字</p>
-      {hasVoice && (
-        <button className="speaker" onClick={() => speakChinese(card.word || card.char)} aria-label="Play">
-          ▶
-        </button>
-      )}
+      <button className="speaker" onClick={() => speakChinese(card.word || card.char)} aria-label="Play">
+        ▶
+      </button>
       {!revealed ? (
         <div className="choices">
           {choices.map((c) => (
@@ -367,22 +351,20 @@ function ListenCard({ card, choices, revealed, feedback, hasVoice, onPick, onCon
           ))}
         </div>
       ) : (
-        <Reveal card={card} feedback={feedback} hasVoice={hasVoice} onContinue={onContinue} />
+        <Reveal card={card} feedback={feedback} onContinue={onContinue} />
       )}
     </article>
   );
 }
 
-function Reveal({ card, feedback, hasVoice, onContinue }) {
+function Reveal({ card, feedback, onContinue }) {
   return (
     <div className="reveal">
       <p className={`grade ${feedback}`}>{feedback === 'correct' ? '对' : '不对'}</p>
       <p className="pinyin">{card.pinyin}</p>
       <p className="word">{card.word}<span> · {card.wordPinyin}</span></p>
       <p className="meaning">{card.meaning}</p>
-      {hasVoice && (
-        <button className="ghost" onClick={() => speakChinese(card.word || card.char)}>听词语</button>
-      )}
+      <button className="ghost" onClick={() => speakChinese(card.word || card.char)}>听词语</button>
       <button className="primary" onClick={onContinue} autoFocus>继续</button>
     </div>
   );

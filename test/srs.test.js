@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { onCorrect, onFail, startLearning, markKnown, dueCards, learnedNewCount, LEARN_STEPS_MS } from '../src/srs.js';
 import { initializeCards } from '../src/storage.js';
-import { nextItem } from '../src/session.js';
+import { nextItem, promptFor } from '../src/session.js';
 
 const sample = [
   { char: '你', pinyin: 'nǐ', meaning: 'you', word: '你好', wordPinyin: 'nǐhǎo', tier: 1 },
@@ -27,22 +27,25 @@ test('I do not know this word does not empty the queue', () => {
   assert.equal(item.card.char, '我');
 });
 
-test('learning card is due immediately and failed cards return in a minute', () => {
+test('learning card is due immediately and failed cards return in under a minute', () => {
   const now = 5_000_000;
   let card = startLearning(initializeCards(sample)[0], now);
   assert.ok(dueCards([card], now).length === 1);
   card = onFail(card, now);
   assert.equal(card.phase, 'relearning');
   assert.equal(dueCards([card], now).length, 0);
-  assert.equal(dueCards([card], now + 60 * 1000).length, 1);
+  assert.equal(dueCards([card], now + 45 * 1000).length, 1);
 });
 
-test('first pass schedules a same-day 10 minute step', () => {
+test('first pass comes back in the same session (~45s) as a listen prompt', () => {
   const now = 8_000_000;
   let card = startLearning(initializeCards(sample)[0], now);
   card = onCorrect(card, now);
   assert.equal(card.phase, 'learning');
-  assert.equal(card.due, now + LEARN_STEPS_MS[1]);
+  assert.equal(card.step, 1);
+  assert.equal(card.due, now + LEARN_STEPS_MS[0]);
+  const prompt = promptFor(card, { hasVoice: true, promptIndex: 0 });
+  assert.equal(prompt.type, 'listen');
 });
 
 test('already-know does not count as a new learn', () => {

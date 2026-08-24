@@ -33,9 +33,12 @@ Numbered (`ni3`) and marked (`nǐ`) both count. Toneless `ni` does not. `v` = `�
 
 ## Audio
 
-Web Speech API, Chinese voice only. If the browser has no `zh-*` voice, speaker controls are hidden and the session is 字 → pinyin only.
+Plays the **汉字 / 词语**, never pinyin:
 
-Best: Chrome or Edge on a machine with a Mandarin voice.
+1. Native `zh-*` voice via Web Speech API when the browser has one
+2. Otherwise Mandarin dictionary audio of the same Chinese text
+
+Listen prompts (hear the word → pick 字) show up on the second pass, about 45 seconds later in the same session.
 
 ## Dev
 

@@ -79,7 +79,7 @@ export function nextItem(cards, ctx, now = Date.now()) {
 
 export function promptFor(card, ctx) {
   const listenOk = ctx.hasVoice && (card.phase !== 'learning' || (card.step ?? 0) > 0);
-  if (listenOk && ctx.promptIndex % 2 === 1) {
+  if (listenOk && ((card.step ?? 0) > 0 || ctx.promptIndex % 2 === 1)) {
     return { type: 'listen', card };
   }
   return { type: 'read', card };

@@ -1,6 +1,6 @@
 export const DAY_MS = 24 * 60 * 60 * 1000;
-export const LEARN_STEPS_MS = [20 * 1000, 10 * 60 * 1000];
-export const LAPSE_MS = 60 * 1000;
+export const LEARN_STEPS_MS = [45 * 1000, 8 * 60 * 1000];
+export const LAPSE_MS = 45 * 1000;
 export const GRADUATE_DAYS = 1;
 export const KNOWN_DAYS = 21;
 export const INITIAL_EASE = 2.5;
@@ -64,7 +64,7 @@ export function onCorrect(card, now = Date.now()) {
     return {
       ...card,
       step: step + 1,
-      due: now + steps[step + 1],
+      due: now + steps[step],
       reps: (card.reps || 0) + 1,
     };
   }
