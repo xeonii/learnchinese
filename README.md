@@ -2,6 +2,8 @@
 
 **From Sound to Character** - A spaced repetition web app for heritage Mandarin speakers learning to read Chinese characters.
 
+🔗 **Live App**: https://xeonii.github.io/learnchinese/
+
 ## Overview
 
 口到字 helps heritage speakers who understand spoken Mandarin but need to connect the sounds they know to written 汉字 (Chinese characters). Built for learners with strong listening comprehension who primarily read and type in pinyin.
