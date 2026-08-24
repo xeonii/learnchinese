@@ -18,6 +18,7 @@ function App() {
   const [placementIndex, setPlacementIndex] = useState(0);
   const [multipleChoices, setMultipleChoices] = useState([]);
   const [sessionStats, setSessionStats] = useState({ correct: 0, incorrect: 0 });
+  const [hasChineseVoice, setHasChineseVoice] = useState(true);
 
   useEffect(() => {
     const savedState = loadState();
@@ -32,7 +33,16 @@ function App() {
     }
 
     if ('speechSynthesis' in window) {
-      window.speechSynthesis.getVoices();
+      const checkVoices = () => {
+        const voices = window.speechSynthesis.getVoices();
+        const hasZh = voices.some(v => v.lang.startsWith('zh'));
+        setHasChineseVoice(hasZh);
+      };
+      
+      window.speechSynthesis.addEventListener('voiceschanged', checkVoices);
+      checkVoices();
+    } else {
+      setHasChineseVoice(false);
     }
   }, []);
 
@@ -49,7 +59,6 @@ function App() {
       return;
     }
     setCurrentCard(unknownCards[placementIndex]);
-    speakChinese(unknownCards[placementIndex].pinyin);
   };
 
   const handlePlacementChoice = (choice) => {
@@ -75,7 +84,6 @@ function App() {
       setMode('menu');
     } else {
       setCurrentCard(unknownCards[nextIndex]);
-      speakChinese(unknownCards[nextIndex].pinyin);
     }
   };
 
@@ -108,9 +116,9 @@ function App() {
     setRevealed(false);
     setMode('drill');
 
-    if (type === 'pinyin-to-char') {
+    if (type === 'audio-to-char') {
       generateMultipleChoices(card);
-      speakChinese(card.pinyin);
+      speakChinese(card.char);
     }
   };
 
@@ -206,13 +214,15 @@ function App() {
         </div>
         <div className="content">
           <div className="card">
-            <p style={{ fontSize: '20px', marginBottom: '24px' }}>
-              Listen to the word. Do you know this character?
+            <div className="character">{currentCard.char}</div>
+            <p style={{ fontSize: '18px', marginBottom: '16px', color: '#6b7280' }}>
+              Do you know this word and character?
             </p>
-            <button className="audio-btn" onClick={() => speakChinese(currentCard.pinyin)}>
-              🔊
-            </button>
-            <div className="pinyin">{currentCard.pinyin}</div>
+            {hasChineseVoice && (
+              <button className="audio-btn" onClick={() => speakChinese(currentCard.char)}>
+                🔊
+              </button>
+            )}
             <div className="placement-options">
               <button 
                 className="placement-btn"
@@ -224,7 +234,7 @@ function App() {
                 className="placement-btn"
                 onClick={() => handlePlacementChoice('know-word')}
               >
-                ~ I know the word but not the 汉字
+                ~ I know the spoken word but not this 汉字
               </button>
               <button 
                 className="placement-btn"
@@ -290,12 +300,17 @@ function App() {
               </button>
               <button 
                 className="btn btn-primary"
-                onClick={() => startDrill('pinyin-to-char')}
-                disabled={dueCount === 0 && newAvailable === 0}
+                onClick={() => startDrill('audio-to-char')}
+                disabled={dueCount === 0 && newAvailable === 0 || !hasChineseVoice}
               >
-                Pinyin + Audio → 字
+                Audio → 字
               </button>
             </div>
+            {!hasChineseVoice && (
+              <p style={{ textAlign: 'center', marginTop: '16px', color: '#e11d48' }}>
+                No Chinese voice available. Audio drill disabled.
+              </p>
+            )}
             {dueCount === 0 && newAvailable === 0 && (
               <p style={{ textAlign: 'center', marginTop: '16px', color: '#6b7280' }}>
                 All done for today! Come back tomorrow for more.
@@ -316,7 +331,7 @@ function App() {
         </div>
         <div className="content">
           <div className="session-complete">
-            <h2>Great work! 🎉</h2>
+            <h2>Great work!</h2>
             <p>You've completed this session.</p>
             <div className="stats">
               <div className="stat-card">
@@ -365,7 +380,7 @@ function App() {
                   <div className="input-group">
                     <input
                       type="text"
-                      placeholder="Enter pinyin..."
+                      placeholder="Type pinyin..."
                       value={userInput}
                       onChange={(e) => setUserInput(e.target.value)}
                       onKeyPress={(e) => e.key === 'Enter' && handleSubmitPinyin()}
@@ -383,9 +398,11 @@ function App() {
                   </div>
                   <div className="pinyin">{currentCard.pinyin}</div>
                   <div className="meaning">{currentCard.meaning}</div>
-                  <button className="audio-btn" onClick={() => speakChinese(currentCard.char)}>
-                    🔊
-                  </button>
+                  {hasChineseVoice && (
+                    <button className="audio-btn" onClick={() => speakChinese(currentCard.char)}>
+                      🔊
+                    </button>
+                  )}
                   <button className="btn btn-primary" onClick={handleContinue}>
                     Continue
                   </button>
@@ -397,12 +414,12 @@ function App() {
       );
     }
 
-    if (drillType === 'pinyin-to-char') {
+    if (drillType === 'audio-to-char') {
       return (
         <div className="app">
           <div className="header">
             <h1>口到字</h1>
-            <p>Pinyin + Audio → 字</p>
+            <p>Audio → 字</p>
           </div>
           <div className="content">
             <div className="stats" style={{ marginBottom: '24px' }}>
@@ -417,16 +434,17 @@ function App() {
             </div>
 
             <div className="card">
-              <button className="audio-btn" onClick={() => speakChinese(currentCard.pinyin)}>
-                🔊
-              </button>
-              <div className="pinyin">{currentCard.pinyin}</div>
+              {hasChineseVoice && (
+                <button className="audio-btn" onClick={() => speakChinese(currentCard.char)}>
+                  🔊
+                </button>
+              )}
+              <p style={{ fontSize: '18px', marginTop: '16px', marginBottom: '24px', color: '#6b7280' }}>
+                Listen and pick the character
+              </p>
               
               {!revealed ? (
                 <>
-                  <p style={{ marginTop: '24px', marginBottom: '16px' }}>
-                    Which character matches this sound?
-                  </p>
                   <div className="choices">
                     {multipleChoices.map((choice, idx) => (
                       <button
@@ -445,6 +463,7 @@ function App() {
                     {feedback === 'correct' ? '✓ Correct!' : '✗ Incorrect'}
                   </div>
                   <div className="character">{currentCard.char}</div>
+                  <div className="pinyin">{currentCard.pinyin}</div>
                   <div className="meaning">{currentCard.meaning}</div>
                   <button className="btn btn-primary" onClick={handleContinue}>
                     Continue

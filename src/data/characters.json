@@ -182,7 +182,7 @@
   {"char": "灯", "pinyin": "dēng", "meaning": "lamp, light"},
   {"char": "电", "pinyin": "diàn", "meaning": "electricity"},
   {"char": "话", "pinyin": "huà", "meaning": "speech, words"},
-  {"char": "脑", "pinyin": "nǎo", "knowledge": "brain"},
+  {"char": "脑", "pinyin": "nǎo", "meaning": "brain"},
   {"char": "视", "pinyin": "shì", "meaning": "vision"},
   {"char": "机", "pinyin": "jī", "meaning": "machine"},
   {"char": "车", "pinyin": "chē", "meaning": "vehicle, car"},
