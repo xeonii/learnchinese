@@ -1,483 +1,386 @@
-import { useState, useEffect } from 'react';
-import './App.css';
+import { useEffect, useMemo, useState } from 'react';
 import charactersData from './data/characters.json';
-import { loadState, saveState, initializeCards } from './utils/storage';
-import { calculateNextReview, getDueCards, getNewCardsForToday } from './utils/srs';
-import { speakChinese, pinyinMatches } from './utils/audio';
+import { speakChinese, onVoicesChanged } from './audio.js';
+import { pinyinMatches } from './pinyin.js';
+import {
+  DAILY_NEW_LIMIT,
+  SESSION_MINUTES,
+  learnedNewCount,
+  markKnown,
+  markSkipped,
+  onCorrect,
+  onFail,
+  startLearning,
+  updateStreak,
+} from './srs.js';
+import { clearState, initializeCards, loadState, saveState } from './storage.js';
+import { choicesFor, estimateMinutes, nextItem, replaceCard, sessionCounts } from './session.js';
 
-const DAILY_NEW_LIMIT = 5;
+function persist(cards, meta) {
+  saveState({ cards, streak: meta.streak, lastSessionDate: meta.lastSessionDate });
+}
 
-function App() {
+function formatMs(ms) {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+export default function App() {
   const [cards, setCards] = useState([]);
-  const [currentCard, setCurrentCard] = useState(null);
-  const [mode, setMode] = useState('loading');
-  const [drillType, setDrillType] = useState(null);
-  const [userInput, setUserInput] = useState('');
-  const [feedback, setFeedback] = useState(null);
+  const [meta, setMeta] = useState({ streak: 0, lastSessionDate: null });
+  const [hasVoice, setHasVoice] = useState(false);
+  const [ready, setReady] = useState(false);
+  const [screen, setScreen] = useState('home');
+  const [item, setItem] = useState(null);
+  const [session, setSession] = useState(null);
+  const [input, setInput] = useState('');
   const [revealed, setRevealed] = useState(false);
-  const [placementIndex, setPlacementIndex] = useState(0);
-  const [multipleChoices, setMultipleChoices] = useState([]);
-  const [sessionStats, setSessionStats] = useState({ correct: 0, incorrect: 0 });
-  const [hasChineseVoice, setHasChineseVoice] = useState(true);
+  const [feedback, setFeedback] = useState(null);
+  const [choices, setChoices] = useState([]);
+  const [nowTick, setNowTick] = useState(Date.now());
 
   useEffect(() => {
-    const savedState = loadState();
-    if (savedState && savedState.cards) {
-      setCards(savedState.cards);
-      setMode('menu');
+    const saved = loadState();
+    if (saved?.cards?.length) {
+      setCards(saved.cards);
+      setMeta({
+        streak: saved.streak || 0,
+        lastSessionDate: saved.lastSessionDate || null,
+      });
     } else {
-      const initialCards = initializeCards(charactersData);
-      setCards(initialCards);
-      setMode('placement');
-      startPlacement(initialCards);
+      setCards(initializeCards(charactersData));
     }
-
-    if ('speechSynthesis' in window) {
-      const checkVoices = () => {
-        const voices = window.speechSynthesis.getVoices();
-        const hasZh = voices.some(v => v.lang.startsWith('zh'));
-        setHasChineseVoice(hasZh);
-      };
-      
-      window.speechSynthesis.addEventListener('voiceschanged', checkVoices);
-      checkVoices();
-    } else {
-      setHasChineseVoice(false);
-    }
+    setReady(true);
+    return onVoicesChanged(setHasVoice);
   }, []);
 
   useEffect(() => {
-    if (cards.length > 0 && mode !== 'loading') {
-      saveState({ cards });
-    }
-  }, [cards, mode]);
+    if (!ready || cards.length === 0) return;
+    persist(cards, meta);
+  }, [cards, meta, ready]);
 
-  const startPlacement = (cardList) => {
-    const unknownCards = cardList.filter(c => c.status === 'unknown');
-    if (unknownCards.length === 0 || placementIndex >= unknownCards.length) {
-      setMode('menu');
+  useEffect(() => {
+    if (screen !== 'session' || !session) return undefined;
+    const id = setInterval(() => setNowTick(Date.now()), 250);
+    return () => clearInterval(id);
+  }, [screen, session]);
+
+  const counts = useMemo(() => sessionCounts(cards, nowTick), [cards, nowTick]);
+  const minutes = estimateMinutes(cards, nowTick);
+
+  function goNext(nextCards, nextSession) {
+    const now = Date.now();
+    if (now >= nextSession.endsAt) {
+      finishSession(nextCards, nextSession);
       return;
     }
-    setCurrentCard(unknownCards[placementIndex]);
-  };
-
-  const handlePlacementChoice = (choice) => {
-    const updatedCards = cards.map(c => {
-      if (c.id === currentCard.id) {
-        if (choice === 'know-both') {
-          return { ...c, status: 'learning', introducedDate: new Date().toDateString() };
-        } else if (choice === 'know-word') {
-          return { ...c, status: 'new' };
-        } else {
-          return { ...c, status: 'unknown' };
-        }
-      }
-      return c;
+    const ctx = {
+      hasVoice,
+      intros: nextSession.intros,
+      learnedNew: learnedNewCount(nextCards, now),
+      promptIndex: nextSession.promptIndex,
+    };
+    const nxt = nextItem(nextCards, ctx, now);
+    if (!nxt) {
+      finishSession(nextCards, nextSession);
+      return;
+    }
+    setCards(nextCards);
+    setItem(nxt);
+    setSession({
+      ...nextSession,
+      promptIndex: nextSession.promptIndex + (nxt.type === 'intro' ? 0 : 1),
     });
-
-    setCards(updatedCards);
-    const nextIndex = placementIndex + 1;
-    setPlacementIndex(nextIndex);
-
-    const unknownCards = updatedCards.filter(c => c.status === 'unknown');
-    if (nextIndex >= unknownCards.length || nextIndex >= 30) {
-      setMode('menu');
-    } else {
-      setCurrentCard(unknownCards[nextIndex]);
-    }
-  };
-
-  const startDrill = (type) => {
-    setDrillType(type);
-    setSessionStats({ correct: 0, incorrect: 0 });
-    nextCard(type);
-  };
-
-  const nextCard = (type) => {
-    const dueCards = getDueCards(cards);
-    const newCards = getNewCardsForToday(cards, DAILY_NEW_LIMIT);
-    
-    let availableCards = [];
-    if (dueCards.length > 0) {
-      availableCards = dueCards.filter(c => c.status === 'learning');
-    } else if (newCards.length > 0) {
-      availableCards = newCards;
-    }
-
-    if (availableCards.length === 0) {
-      setMode('session-complete');
-      return;
-    }
-
-    const card = availableCards[Math.floor(Math.random() * availableCards.length)];
-    setCurrentCard(card);
-    setUserInput('');
-    setFeedback(null);
+    setInput('');
     setRevealed(false);
-    setMode('drill');
-
-    if (type === 'audio-to-char') {
-      generateMultipleChoices(card);
-      speakChinese(card.char);
+    setFeedback(null);
+    setChoices(nxt.type === 'listen' ? choicesFor(nxt.card, nextCards) : []);
+    if (nxt.type === 'listen') {
+      speakChinese(nxt.card.word || nxt.card.char);
     }
-  };
+  }
 
-  const generateMultipleChoices = (correctCard) => {
-    const choices = [correctCard.char];
-    const otherCards = cards.filter(c => c.id !== correctCard.id && c.char !== correctCard.char);
-    
-    while (choices.length < 4 && otherCards.length > 0) {
-      const randomIndex = Math.floor(Math.random() * otherCards.length);
-      const randomCard = otherCards[randomIndex];
-      if (!choices.includes(randomCard.char)) {
-        choices.push(randomCard.char);
-      }
-      otherCards.splice(randomIndex, 1);
-    }
+  function startSession() {
+    const now = Date.now();
+    const nextSession = {
+      startedAt: now,
+      endsAt: now + SESSION_MINUTES * 60 * 1000,
+      intros: 0,
+      promptIndex: 0,
+      reviewed: 0,
+      newLearned: 0,
+      known: 0,
+      skipped: 0,
+      correct: 0,
+      incorrect: 0,
+    };
+    setScreen('session');
+    goNext(cards, nextSession);
+  }
 
-    setMultipleChoices(choices.sort(() => Math.random() - 0.5));
-  };
+  function finishSession(nextCards, nextSession) {
+    const streakMeta = updateStreak(meta, Date.now());
+    setCards(nextCards);
+    setMeta(streakMeta);
+    persist(nextCards, streakMeta);
+    setSession(nextSession);
+    setScreen('summary');
+    setItem(null);
+  }
 
-  const handleSubmitPinyin = () => {
-    const isCorrect = pinyinMatches(userInput, currentCard.pinyin);
-    setFeedback(isCorrect ? 'correct' : 'incorrect');
-    setRevealed(true);
-    
-    if (isCorrect) {
-      setSessionStats(prev => ({ ...prev, correct: prev.correct + 1 }));
+  function handleIntro(choice) {
+    const now = Date.now();
+    let updated;
+    const patch = { intros: session.intros + 1 };
+    if (choice === 'known') {
+      updated = markKnown(item.card, now);
+      patch.known = session.known + 1;
+    } else if (choice === 'skip') {
+      updated = markSkipped(item.card);
+      patch.skipped = session.skipped + 1;
     } else {
-      setSessionStats(prev => ({ ...prev, incorrect: prev.incorrect + 1 }));
+      updated = startLearning(item.card, now);
+      patch.newLearned = session.newLearned + 1;
     }
+    goNext(replaceCard(cards, updated), { ...session, ...patch });
+  }
 
-    speakChinese(currentCard.char);
-  };
-
-  const handleChoiceClick = (choice) => {
-    const isCorrect = choice === currentCard.char;
-    setFeedback(isCorrect ? 'correct' : 'incorrect');
+  function grade(correct) {
+    const now = Date.now();
+    const updated = correct ? onCorrect(item.card, now) : onFail(item.card, now);
+    setFeedback(correct ? 'correct' : 'incorrect');
     setRevealed(true);
+    setCards(replaceCard(cards, updated));
+    if (hasVoice) speakChinese(item.card.word || item.card.char);
+    setSession({
+      ...session,
+      reviewed: session.reviewed + 1,
+      correct: session.correct + (correct ? 1 : 0),
+      incorrect: session.incorrect + (correct ? 0 : 1),
+    });
+  }
 
-    if (isCorrect) {
-      setSessionStats(prev => ({ ...prev, correct: prev.correct + 1 }));
-    } else {
-      setSessionStats(prev => ({ ...prev, incorrect: prev.incorrect + 1 }));
-    }
-  };
+  function handlePinyinSubmit() {
+    if (!input.trim()) return;
+    grade(pinyinMatches(input, item.card.pinyin));
+  }
 
-  const handleContinue = () => {
-    const quality = feedback === 'correct' ? 4 : 2;
-    const updatedCard = calculateNextReview(currentCard, quality);
-    
-    if (currentCard.status === 'new') {
-      updatedCard.status = 'learning';
-      updatedCard.introducedDate = new Date().toDateString();
-    }
+  function handleContinue() {
+    const current = cards.find((c) => c.id === item.card.id) || item.card;
+    goNext(replaceCard(cards, current), session);
+  }
 
-    const updatedCards = cards.map(c => c.id === currentCard.id ? updatedCard : c);
-    setCards(updatedCards);
-    
-    nextCard(drillType);
-  };
+  function handleReset() {
+    clearState();
+    const fresh = initializeCards(charactersData);
+    setCards(fresh);
+    setMeta({ streak: 0, lastSessionDate: null });
+    setScreen('home');
+    setSession(null);
+  }
 
-  const getTodayStats = () => {
-    const today = new Date().toDateString();
-    const newToday = cards.filter(c => c.introducedDate === today).length;
-    const reviewed = cards.filter(c => {
-      if (!c.lastReview) return false;
-      const reviewDate = new Date(c.lastReview).toDateString();
-      return reviewDate === today;
-    }).length;
-    
-    return { newToday, reviewed };
-  };
-
-  const getProgress = () => {
-    const learned = cards.filter(c => c.status === 'learning').length;
-    const total = cards.length;
-    return { learned, total, percentage: (learned / total) * 100 };
-  };
-
-  if (mode === 'loading') {
+  if (!ready) {
     return (
-      <div className="app">
-        <div className="loading">Loading...</div>
+      <div className="shell">
+        <p className="muted">加载中…</p>
       </div>
     );
   }
 
-  if (mode === 'placement') {
+  if (screen === 'summary' && session) {
     return (
-      <div className="app">
-        <div className="header">
-          <h1>口到字</h1>
-          <p>Placement Test</p>
-        </div>
-        <div className="content">
-          <div className="card">
-            <div className="character">{currentCard.char}</div>
-            <p style={{ fontSize: '18px', marginBottom: '16px', color: '#6b7280' }}>
-              Do you know this word and character?
-            </p>
-            {hasChineseVoice && (
-              <button className="audio-btn" onClick={() => speakChinese(currentCard.char)}>
-                🔊
-              </button>
-            )}
-            <div className="placement-options">
-              <button 
-                className="placement-btn"
-                onClick={() => handlePlacementChoice('know-both')}
-              >
-                ✓ Yes, I know the word and recognize the 汉字
-              </button>
-              <button 
-                className="placement-btn"
-                onClick={() => handlePlacementChoice('know-word')}
-              >
-                ~ I know the spoken word but not this 汉字
-              </button>
-              <button 
-                className="placement-btn"
-                onClick={() => handlePlacementChoice('dont-know')}
-              >
-                ✗ I don't know this word
-              </button>
-            </div>
-          </div>
-          <p style={{ textAlign: 'center', color: '#6b7280' }}>
-            {placementIndex + 1} / {Math.min(30, cards.filter(c => c.status === 'unknown').length)}
-          </p>
-        </div>
+      <div className="shell">
+        <header className="top">
+          <p className="brand">口到字</p>
+        </header>
+        <section className="panel summary">
+          <h1>今天到这里。</h1>
+          <p className="lede">明天同一时间再来 5–15 分钟。</p>
+          <dl className="facts">
+            <div><dt>复习</dt><dd>{session.reviewed}</dd></div>
+            <div><dt>新学</dt><dd>{session.newLearned}</dd></div>
+            <div><dt>已会</dt><dd>{session.known}</dd></div>
+            <div><dt>连胜</dt><dd>{meta.streak} 天</dd></div>
+          </dl>
+          <p className="muted">到期 {sessionCounts(cards).due} · 还可新学 {sessionCounts(cards).newLeft}/{DAILY_NEW_LIMIT}</p>
+          <button className="primary" onClick={() => setScreen('home')}>完成</button>
+        </section>
       </div>
     );
   }
 
-  if (mode === 'menu') {
-    const stats = getTodayStats();
-    const progress = getProgress();
-    const dueCount = getDueCards(cards).filter(c => c.status === 'learning').length;
-    const newAvailable = getNewCardsForToday(cards, DAILY_NEW_LIMIT).length;
-
+  if (screen === 'session' && item) {
+    const remaining = session ? session.endsAt - nowTick : 0;
     return (
-      <div className="app">
-        <div className="header">
-          <h1>口到字</h1>
-          <p>Learn Chinese Characters Through Sound</p>
-        </div>
-        <div className="content">
-          <div className="progress-bar">
-            <div className="progress-fill" style={{ width: `${progress.percentage}%` }} />
-          </div>
-
-          <div className="stats">
-            <div className="stat-card">
-              <span className="stat-value">{progress.learned}</span>
-              <span className="stat-label">Characters Learned</span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-value">{stats.newToday}</span>
-              <span className="stat-label">New Today</span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-value">{dueCount}</span>
-              <span className="stat-label">Due for Review</span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-value">{stats.reviewed}</span>
-              <span className="stat-label">Reviewed Today</span>
-            </div>
-          </div>
-
-          <div style={{ marginTop: '32px' }}>
-            <h2 style={{ marginBottom: '16px', textAlign: 'center' }}>Choose a Drill</h2>
-            <div className="btn-group" style={{ flexDirection: 'column' }}>
-              <button 
-                className="btn btn-primary"
-                onClick={() => startDrill('char-to-pinyin')}
-                disabled={dueCount === 0 && newAvailable === 0}
-              >
-                字 → Pinyin
-              </button>
-              <button 
-                className="btn btn-primary"
-                onClick={() => startDrill('audio-to-char')}
-                disabled={dueCount === 0 && newAvailable === 0 || !hasChineseVoice}
-              >
-                Audio → 字
-              </button>
-            </div>
-            {!hasChineseVoice && (
-              <p style={{ textAlign: 'center', marginTop: '16px', color: '#e11d48' }}>
-                No Chinese voice available. Audio drill disabled.
-              </p>
-            )}
-            {dueCount === 0 && newAvailable === 0 && (
-              <p style={{ textAlign: 'center', marginTop: '16px', color: '#6b7280' }}>
-                All done for today! Come back tomorrow for more.
-              </p>
-            )}
-          </div>
-        </div>
+      <div className="shell session">
+        <header className="session-bar">
+          <button className="text-btn" onClick={() => finishSession(cards, session)} aria-label="End session">✕</button>
+          <span className="count">{session.reviewed + session.known + session.skipped + session.newLearned}</span>
+          <span className="clock">{formatMs(remaining)}</span>
+        </header>
+        {item.type === 'intro' && (
+          <IntroCard
+            card={item.card}
+            canLearn={item.canLearn}
+            hasVoice={hasVoice}
+            onChoice={handleIntro}
+          />
+        )}
+        {item.type === 'read' && (
+          <ReadCard
+            card={item.card}
+            input={input}
+            setInput={setInput}
+            revealed={revealed}
+            feedback={feedback}
+            hasVoice={hasVoice}
+            onSubmit={handlePinyinSubmit}
+            onContinue={handleContinue}
+          />
+        )}
+        {item.type === 'listen' && (
+          <ListenCard
+            card={item.card}
+            choices={choices}
+            revealed={revealed}
+            feedback={feedback}
+            hasVoice={hasVoice}
+            onPick={(ch) => grade(ch === item.card.char)}
+            onContinue={handleContinue}
+          />
+        )}
       </div>
     );
   }
 
-  if (mode === 'session-complete') {
-    return (
-      <div className="app">
-        <div className="header">
-          <h1>口到字</h1>
-          <p>Session Complete</p>
+  return (
+    <div className="shell">
+      <header className="top">
+        <p className="brand">口到字</p>
+        <p className="lede">把会说的词，钉到汉字上。</p>
+      </header>
+      <section className="panel">
+        <button className="primary start" onClick={startSession}>
+          开始练习
+          <span>约 {minutes} 分钟</span>
+        </button>
+        <ul className="stats">
+          <li><strong>{meta.streak}</strong> 连胜</li>
+          <li><strong>{counts.due}</strong> 到期</li>
+          <li><strong>{counts.newLeft}</strong> 今日新字</li>
+        </ul>
+        <div className="progress" aria-hidden="true">
+          <div className="progress-fill" style={{ width: `${Math.min(100, (counts.known / counts.total) * 100)}%` }} />
         </div>
-        <div className="content">
-          <div className="session-complete">
-            <h2>Great work!</h2>
-            <p>You've completed this session.</p>
-            <div className="stats">
-              <div className="stat-card">
-                <span className="stat-value">{sessionStats.correct}</span>
-                <span className="stat-label">Correct</span>
-              </div>
-              <div className="stat-card">
-                <span className="stat-value">{sessionStats.incorrect}</span>
-                <span className="stat-label">Incorrect</span>
-              </div>
-            </div>
-            <button className="btn btn-primary" onClick={() => setMode('menu')}>
-              Back to Menu
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (mode === 'drill' && currentCard) {
-    if (drillType === 'char-to-pinyin') {
-      return (
-        <div className="app">
-          <div className="header">
-            <h1>口到字</h1>
-            <p>字 → Pinyin</p>
-          </div>
-          <div className="content">
-            <div className="stats" style={{ marginBottom: '24px' }}>
-              <div className="stat-card">
-                <span className="stat-value">{sessionStats.correct}</span>
-                <span className="stat-label">Correct</span>
-              </div>
-              <div className="stat-card">
-                <span className="stat-value">{sessionStats.incorrect}</span>
-                <span className="stat-label">Incorrect</span>
-              </div>
-            </div>
-
-            <div className="card">
-              <div className="character">{currentCard.char}</div>
-              
-              {!revealed ? (
-                <>
-                  <div className="input-group">
-                    <input
-                      type="text"
-                      placeholder="Type pinyin..."
-                      value={userInput}
-                      onChange={(e) => setUserInput(e.target.value)}
-                      onKeyPress={(e) => e.key === 'Enter' && handleSubmitPinyin()}
-                      autoFocus
-                    />
-                  </div>
-                  <button className="btn btn-primary" onClick={handleSubmitPinyin}>
-                    Submit
-                  </button>
-                </>
-              ) : (
-                <>
-                  <div className={`feedback feedback-${feedback}`}>
-                    {feedback === 'correct' ? '✓ Correct!' : '✗ Incorrect'}
-                  </div>
-                  <div className="pinyin">{currentCard.pinyin}</div>
-                  <div className="meaning">{currentCard.meaning}</div>
-                  {hasChineseVoice && (
-                    <button className="audio-btn" onClick={() => speakChinese(currentCard.char)}>
-                      🔊
-                    </button>
-                  )}
-                  <button className="btn btn-primary" onClick={handleContinue}>
-                    Continue
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    if (drillType === 'audio-to-char') {
-      return (
-        <div className="app">
-          <div className="header">
-            <h1>口到字</h1>
-            <p>Audio → 字</p>
-          </div>
-          <div className="content">
-            <div className="stats" style={{ marginBottom: '24px' }}>
-              <div className="stat-card">
-                <span className="stat-value">{sessionStats.correct}</span>
-                <span className="stat-label">Correct</span>
-              </div>
-              <div className="stat-card">
-                <span className="stat-value">{sessionStats.incorrect}</span>
-                <span className="stat-label">Incorrect</span>
-              </div>
-            </div>
-
-            <div className="card">
-              {hasChineseVoice && (
-                <button className="audio-btn" onClick={() => speakChinese(currentCard.char)}>
-                  🔊
-                </button>
-              )}
-              <p style={{ fontSize: '18px', marginTop: '16px', marginBottom: '24px', color: '#6b7280' }}>
-                Listen and pick the character
-              </p>
-              
-              {!revealed ? (
-                <>
-                  <div className="choices">
-                    {multipleChoices.map((choice, idx) => (
-                      <button
-                        key={idx}
-                        className="choice-btn"
-                        onClick={() => handleChoiceClick(choice)}
-                      >
-                        {choice}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className={`feedback feedback-${feedback}`}>
-                    {feedback === 'correct' ? '✓ Correct!' : '✗ Incorrect'}
-                  </div>
-                  <div className="character">{currentCard.char}</div>
-                  <div className="pinyin">{currentCard.pinyin}</div>
-                  <div className="meaning">{currentCard.meaning}</div>
-                  <button className="btn btn-primary" onClick={handleContinue}>
-                    Continue
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      );
-    }
-  }
-
-  return null;
+        <p className="muted">
+          已认识 {counts.known} / {counts.total} · 课标基本字 300 + 常用字
+        </p>
+        {!hasVoice && (
+          <p className="warn">这个浏览器没有中文语音。今天只做看字写拼音；换 Chrome / Edge 可听词选字。</p>
+        )}
+      </section>
+      <footer>
+        <button className="text-btn" onClick={handleReset}>清除进度</button>
+      </footer>
+    </div>
+  );
 }
 
-export default App;
+function IntroCard({ card, canLearn, hasVoice, onChoice }) {
+  useEffect(() => {
+    if (hasVoice) speakChinese(card.word || card.char);
+  }, [card, hasVoice]);
+
+  return (
+    <article className="card">
+      <p className="prompt">这个字，你会吗？</p>
+      <div className="han">{card.char}</div>
+      <p className="word">{card.word}</p>
+      <p className="meaning">{card.meaning}</p>
+      {hasVoice && (
+        <button className="ghost" onClick={() => speakChinese(card.word || card.char)}>再听一遍</button>
+      )}
+      <div className="stack">
+        <button className="secondary" onClick={() => onChoice('known')}>我会这个字</button>
+        {canLearn ? (
+          <button className="primary" onClick={() => onChoice('learn')}>学习</button>
+        ) : (
+          <p className="muted">今日新字已满，先复习。</p>
+        )}
+        <button className="text-btn" onClick={() => onChoice('skip')}>不认识这个词，跳过</button>
+      </div>
+    </article>
+  );
+}
+
+function ReadCard({ card, input, setInput, revealed, feedback, hasVoice, onSubmit, onContinue }) {
+  return (
+    <article className="card">
+      <p className="prompt">拼音怎么写？</p>
+      <div className="han">{card.char}</div>
+      {!revealed ? (
+        <form
+          className="answer"
+          onSubmit={(e) => {
+            e.preventDefault();
+            onSubmit();
+          }}
+        >
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="ni3 或 nǐ"
+            autoComplete="off"
+            autoCapitalize="off"
+            autoCorrect="off"
+            autoFocus
+          />
+          <button className="primary" type="submit">提交</button>
+        </form>
+      ) : (
+        <Reveal card={card} feedback={feedback} hasVoice={hasVoice} onContinue={onContinue} />
+      )}
+    </article>
+  );
+}
+
+function ListenCard({ card, choices, revealed, feedback, hasVoice, onPick, onContinue }) {
+  return (
+    <article className="card">
+      <p className="prompt">听词，选出汉字</p>
+      {hasVoice && (
+        <button className="speaker" onClick={() => speakChinese(card.word || card.char)} aria-label="Play">
+          ▶
+        </button>
+      )}
+      {!revealed ? (
+        <div className="choices">
+          {choices.map((c) => (
+            <button key={c.char} className="choice" onClick={() => onPick(c.char)}>
+              {c.char}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <Reveal card={card} feedback={feedback} hasVoice={hasVoice} onContinue={onContinue} />
+      )}
+    </article>
+  );
+}
+
+function Reveal({ card, feedback, hasVoice, onContinue }) {
+  return (
+    <div className="reveal">
+      <p className={`grade ${feedback}`}>{feedback === 'correct' ? '对' : '不对'}</p>
+      <p className="pinyin">{card.pinyin}</p>
+      <p className="word">{card.word} <span>{card.wordPinyin}</span></p>
+      <p className="meaning">{card.meaning}</p>
+      {hasVoice && (
+        <button className="ghost" onClick={() => speakChinese(card.word || card.char)}>听词语</button>
+      )}
+      <button className="primary" onClick={onContinue} autoFocus>继续</button>
+    </div>
+  );
+}

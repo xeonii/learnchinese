@@ -1,125 +1,48 @@
-# 口到字 (kǒu-dào-zì)
+# 口到字
 
-**From Sound to Character** - A spaced repetition web app for heritage Mandarin speakers learning to read Chinese characters.
+A 5–15 minute daily session for heritage Mandarin speakers: attach 汉字 to words you already know by sound.
 
-🔗 **Live App**: https://xeonii.github.io/learnchinese/
+**Live:** https://xeonii.github.io/learnchinese/
 
-## Overview
+## How a session works
 
-口到字 helps heritage speakers who understand spoken Mandarin but need to connect the sounds they know to written 汉字 (Chinese characters). Built for learners with strong listening comprehension who primarily read and type in pinyin.
+Open the app, tap **开始练习**. There is no drill menu.
 
-## Features
+1. **Intro** — huge 字, example word, audio if a Chinese voice exists.  
+   我会这个字 / 学习 / 跳过
+2. **Recall** — type pinyin (`ni3` or `nǐ`) or listen and pick the 字 among lookalikes/homophones.
+3. **Same-day relearn** — misses come back in about a minute, not tomorrow.
+4. Stop at ~12 minutes or when the queue is empty.
 
-- **Placement Test**: Quickly categorize characters you already know vs. need to learn
-- **Two Drill Modes**:
-  - 字 → Pinyin: See a character, type its pronunciation
-  - Pinyin + Audio → 字: Hear a word, choose the correct character
-- **Spaced Repetition**: SM-2 algorithm for optimal learning intervals
-- **Progress Tracking**: Monitor your character recognition against ~1,600 G1-2 curriculum characters
-- **Client-Only**: All data stored locally (no accounts, no server)
-- **Daily Limits**: Maximum 5 new characters per day to prevent overwhelm
-- **Review Priority**: Due reviews shown before new characters
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js 18+ and npm
-
-### Installation
-
-```bash
-npm install
-```
-
-### Development
-
-```bash
-npm run dev
-```
-
-Open your browser to the URL shown (typically `http://localhost:5173`).
-
-### Build for Production
-
-```bash
-npm run build
-```
-
-The built files will be in the `dist/` directory. Deploy these static files to any web host.
+New 字 cap: 10/day. Known 字 are buried (21 days). Skipped words stay out of the way. The rest of the list is still waiting tomorrow — you will not see “all done” after tapping “I don’t know.”
 
 ## Data
 
-The app includes 400+ simplified Chinese characters from the 课标 基本字表 (National Curriculum Basic Character List) covering Grade 1-2 high-frequency characters. Each character includes:
+483 simplified 字:
 
-- Simplified 汉字
-- Pinyin with tone marks
-- English meaning
-- Audio pronunciation via Web Speech API (browser TTS)
+- 300 from 课标《识字、写字教学基本字表》
+- 183 extra high-frequency G1–2 字
 
-## Usage
+Each card has pinyin, a short English gloss, and a spoken word to hang the 字 on.
 
-### First Session
+Progress is against this set, not HSK.
 
-1. **Placement Test**: Listen to words and indicate:
-   - ✓ Know word + character
-   - ~ Know word, not character
-   - ✗ Don't know word
-   
-2. **Choose a Drill**: Practice with either:
-   - Character → Pinyin (typing practice)
-   - Pinyin + Audio → Character (recognition practice)
+## Pinyin
 
-3. **Daily Practice**: Complete reviews first, then learn up to 5 new characters per day
+Numbered (`ni3`) and marked (`nǐ`) both count. Toneless `ni` does not. `v` = `ü` (`nv3` 女).
 
-### Pinyin Input
+## Audio
 
-Both numbered pinyin (ni3, hao3) and marked pinyin (nǐ, hǎo) are accepted. Tones are normalized for matching.
+Web Speech API, Chinese voice only. If the browser has no `zh-*` voice, speaker controls are hidden and the session is 字 → pinyin only.
 
-## Design Decisions
+Best: Chrome or Edge on a machine with a Mandarin voice.
 
-- **No handwriting recognition**: Focus on reading/typing workflow
-- **No speech scoring**: Audio is a model, not assessed
-- **No grammar**: Pure character-sound association
-- **HSK-independent**: Progress tracked against G1-2 curriculum, not HSK levels
-- **Simplified only**: Traditional characters not included
-- **No Anki import**: Purpose-built for heritage learners' specific needs
+## Dev
 
-## Technical Stack
+```bash
+npm install
+npm test
+npm run dev
+```
 
-- React 18
-- Vite 5
-- Web Speech API for TTS
-- localStorage for persistence
-- SM-2 spaced repetition algorithm
-
-## Browser Support
-
-Requires a modern browser with:
-- ES6+ JavaScript
-- localStorage
-- Web Speech API (for audio)
-
-Best experience in Chrome/Edge (best Chinese TTS support).
-
-## License
-
-MIT License - see LICENSE file for details
-
-## Contributing
-
-This is a v1 focused on core functionality. Contributions welcome for:
-- Additional character sets
-- Improved TTS pronunciation
-- Bug fixes
-- Performance improvements
-
-## Data Sources
-
-Character selection based on:
-- 《义务教育语文课程标准》基本字表
-- High-frequency character lists from G1-2 Chinese curriculum
-
----
-
-Built for heritage speakers by understanding their unique starting point: strong ears, developing eyes.
+Vite base path is `/learnchinese/` for GitHub Pages.
