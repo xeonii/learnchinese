@@ -182,7 +182,7 @@ export default function App() {
   if (!ready) {
     return (
       <div className="shell">
-        <p className="muted">加载中…</p>
+        <p className="muted">Loading…</p>
       </div>
     );
   }
@@ -194,16 +194,16 @@ export default function App() {
           <p className="brand">口到字</p>
         </header>
         <section className="panel summary">
-          <h1>今天到这里。</h1>
-          <p className="lede">明天同一时间再来 5–15 分钟。</p>
+          <h1>That’s it for today.</h1>
+          <p className="lede">Come back tomorrow for 5–15 minutes.</p>
           <dl className="facts">
-            <div><dt>复习</dt><dd>{session.reviewed}</dd></div>
-            <div><dt>新学</dt><dd>{session.newLearned}</dd></div>
-            <div><dt>已会</dt><dd>{session.known}</dd></div>
-            <div><dt>连胜</dt><dd>{meta.streak} 天</dd></div>
+            <div><dt>Reviewed</dt><dd>{session.reviewed}</dd></div>
+            <div><dt>New</dt><dd>{session.newLearned}</dd></div>
+            <div><dt>Already knew</dt><dd>{session.known}</dd></div>
+            <div><dt>Streak</dt><dd>{meta.streak}d</dd></div>
           </dl>
-          <p className="muted">到期 {sessionCounts(cards).due} · 还可新学 {sessionCounts(cards).newLeft}/{DAILY_NEW_LIMIT}</p>
-          <button className="primary" onClick={() => setScreen('home')}>完成</button>
+          <p className="muted">Due {sessionCounts(cards).due} · {sessionCounts(cards).newLeft}/{DAILY_NEW_LIMIT} new left today</p>
+          <button className="primary" onClick={() => setScreen('home')}>Done</button>
         </section>
       </div>
     );
@@ -254,27 +254,27 @@ export default function App() {
     <div className="shell">
       <header className="top">
         <p className="brand">口到字</p>
-        <p className="lede">把会说的词，钉到汉字上。</p>
+        <p className="lede">Attach characters to words you already know.</p>
       </header>
       <section className="panel">
         <button className="primary start" onClick={startSession}>
-          开始练习
-          <span>约 {minutes} 分钟</span>
+          Start practice
+          <span>about {minutes} min</span>
         </button>
         <ul className="stats">
-          <li><strong>{meta.streak}</strong> 连胜</li>
-          <li><strong>{counts.due}</strong> 到期</li>
-          <li><strong>{counts.newLeft}</strong> 今日新字</li>
+          <li><strong>{meta.streak}</strong> streak</li>
+          <li><strong>{counts.due}</strong> due</li>
+          <li><strong>{counts.newLeft}</strong> new today</li>
         </ul>
         <div className="progress" aria-hidden="true">
           <div className="progress-fill" style={{ width: `${Math.min(100, (counts.known / counts.total) * 100)}%` }} />
         </div>
         <p className="muted">
-          已认识 {counts.known} / {counts.total} · 课标基本字 300 + 常用字
+          Known {counts.known} / {counts.total} · grade 1–2 character list
         </p>
       </section>
       <footer>
-        <button className="text-btn" onClick={handleReset}>清除进度</button>
+        <button className="text-btn" onClick={handleReset}>Reset progress</button>
       </footer>
     </div>
   );
@@ -283,19 +283,19 @@ export default function App() {
 function IntroCard({ card, canLearn, onChoice }) {
   return (
     <article className="card">
-      <p className="prompt">这个字，你会吗？</p>
+      <p className="prompt">Do you know this character?</p>
       <div className="han">{card.char}</div>
       <p className="word">{card.word}</p>
       <p className="meaning">{card.meaning}</p>
-      <button className="ghost" onClick={() => speakChinese(card.word || card.char)}>再听一遍</button>
+      <button className="ghost" onClick={() => speakChinese(card.word || card.char)}>Play again</button>
       <div className="stack">
-        <button className="secondary" onClick={() => onChoice('known')}>我会这个字</button>
+        <button className="secondary" onClick={() => onChoice('known')}>I already read this</button>
         {canLearn ? (
-          <button className="primary" onClick={() => onChoice('learn')}>学习</button>
+          <button className="primary" onClick={() => onChoice('learn')}>Learn it</button>
         ) : (
-          <p className="muted">今日新字已满，先复习。</p>
+          <p className="muted">Daily new cards are full — reviews first.</p>
         )}
-        <button className="text-btn" onClick={() => onChoice('skip')}>不认识这个词，跳过</button>
+        <button className="text-btn" onClick={() => onChoice('skip')}>Skip — I don’t know this word</button>
       </div>
     </article>
   );
@@ -304,7 +304,7 @@ function IntroCard({ card, canLearn, onChoice }) {
 function ReadCard({ card, input, setInput, revealed, feedback, onSubmit, onContinue }) {
   return (
     <article className="card">
-      <p className="prompt">拼音怎么写？</p>
+      <p className="prompt">Type the pinyin</p>
       <div className="han">{card.char}</div>
       {!revealed ? (
         <form
@@ -319,14 +319,14 @@ function ReadCard({ card, input, setInput, revealed, feedback, onSubmit, onConti
             name="pinyin"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="ni3 或 nǐ"
-            aria-label="拼音"
+            placeholder="ni3 or nǐ"
+            aria-label="Pinyin"
             autoComplete="off"
             autoCapitalize="off"
             autoCorrect="off"
             autoFocus
           />
-          <button className="primary" type="submit">提交</button>
+          <button className="primary" type="submit">Submit</button>
         </form>
       ) : (
         <Reveal card={card} feedback={feedback} onContinue={onContinue} />
@@ -338,7 +338,7 @@ function ReadCard({ card, input, setInput, revealed, feedback, onSubmit, onConti
 function ListenCard({ card, choices, revealed, feedback, onPick, onContinue }) {
   return (
     <article className="card">
-      <p className="prompt">听词，选出汉字</p>
+      <p className="prompt">Listen, then pick the character</p>
       <button className="speaker" onClick={() => speakChinese(card.word || card.char)} aria-label="Play">
         ▶
       </button>
@@ -360,12 +360,12 @@ function ListenCard({ card, choices, revealed, feedback, onPick, onContinue }) {
 function Reveal({ card, feedback, onContinue }) {
   return (
     <div className="reveal">
-      <p className={`grade ${feedback}`}>{feedback === 'correct' ? '对' : '不对'}</p>
+      <p className={`grade ${feedback}`}>{feedback === 'correct' ? 'Right' : 'Not quite'}</p>
       <p className="pinyin">{card.pinyin}</p>
       <p className="word">{card.word}<span> · {card.wordPinyin}</span></p>
       <p className="meaning">{card.meaning}</p>
-      <button className="ghost" onClick={() => speakChinese(card.word || card.char)}>听词语</button>
-      <button className="primary" onClick={onContinue} autoFocus>继续</button>
+      <button className="ghost" onClick={() => speakChinese(card.word || card.char)}>Play word</button>
+      <button className="primary" onClick={onContinue} autoFocus>Continue</button>
     </div>
   );
 }
