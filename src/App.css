@@ -238,6 +238,10 @@ footer { margin-top: auto; text-align: center; }
   cursor: pointer;
 }
 
+.speaker.is-playing {
+  opacity: 0.7;
+}
+
 .grade { font-weight: 700; font-size: 20px; margin: 8px 0 0; }
 .grade.correct { color: var(--right); }
 .grade.incorrect { color: var(--wrong); }
