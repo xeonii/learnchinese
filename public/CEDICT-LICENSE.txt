@@ -1,0 +1,10 @@
+Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)
+
+This app bundles a compact copy of CC-CEDICT, the community-maintained
+Chinese–English dictionary published by MDBG.
+
+- Dictionary: https://www.mdbg.net/chinese/dictionary?page=cc-cedict
+- License: https://creativecommons.org/licenses/by-sa/4.0/
+- Referenced work: CEDICT — Copyright (C) 1997, 1998 Paul Andrew Denisowski
+
+The dictionary data remains CC BY-SA 4.0. The rest of 口到字 is MIT-licensed.

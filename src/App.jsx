@@ -1,7 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import charactersData from './data/characters.json';
 import { speakChinese, canPlayAudio, unlockAudio } from './audio.js';
-import { pinyinMatches } from './pinyin.js';
+import { gradePinyin, toMarked } from './pinyin.js';
+import { characterCoverage } from './coverage.js';
+import { alreadyInLibrary, loadDict, searchDict } from './dict.js';
+import { coverageChars, seedWordsFromCharacters } from './seed.js';
 import {
   DAILY_NEW_LIMIT,
   SESSION_MINUTES,
@@ -10,14 +13,27 @@ import {
   markSkipped,
   onCorrect,
   onFail,
+  onToneSlip,
   startLearning,
   updateStreak,
 } from './srs.js';
-import { clearState, initializeCards, loadState, saveState } from './storage.js';
-import { choicesFor, estimateMinutes, nextItem, replaceCard, sessionCounts } from './session.js';
+import {
+  addDictWord,
+  clearState,
+  downloadBackup,
+  enrichSeedMeanings,
+  initializeWords,
+  loadState,
+  parseImportedState,
+  saveState,
+} from './storage.js';
+import { choicesFor, estimateMinutes, nextItem, phaseLabel, replaceCard, sessionCounts } from './session.js';
 
-function persist(cards, meta) {
-  saveState({ cards, streak: meta.streak, lastSessionDate: meta.lastSessionDate });
+const SEED = seedWordsFromCharacters(charactersData);
+const COVERAGE_LIST = coverageChars(charactersData);
+
+function persist(words, meta) {
+  saveState({ words, meta });
 }
 
 function formatMs(ms) {
@@ -27,9 +43,17 @@ function formatMs(ms) {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
+function appendSlips(meta, slips) {
+  if (!slips?.length) return meta;
+  return {
+    ...meta,
+    toneSlipLog: [...(meta.toneSlipLog || []), ...slips].slice(-200),
+  };
+}
+
 export default function App() {
-  const [cards, setCards] = useState([]);
-  const [meta, setMeta] = useState({ streak: 0, lastSessionDate: null });
+  const [words, setWords] = useState([]);
+  const [meta, setMeta] = useState({ streak: 0, lastSessionDate: null, toneSlipLog: [] });
   const [ready, setReady] = useState(false);
   const [screen, setScreen] = useState('home');
   const [item, setItem] = useState(null);
@@ -37,27 +61,57 @@ export default function App() {
   const [input, setInput] = useState('');
   const [revealed, setRevealed] = useState(false);
   const [feedback, setFeedback] = useState(null);
+  const [slips, setSlips] = useState([]);
   const [choices, setChoices] = useState([]);
   const [nowTick, setNowTick] = useState(Date.now());
+  const [dict, setDict] = useState(null);
+  const [dictError, setDictError] = useState(false);
+  const [lookupQuery, setLookupQuery] = useState('');
+  const [libraryQuery, setLibraryQuery] = useState('');
+  const [notice, setNotice] = useState('');
+  const fileRef = useRef(null);
 
   useEffect(() => {
-    const saved = loadState();
-    if (saved?.cards?.length) {
-      setCards(saved.cards);
-      setMeta({
-        streak: saved.streak || 0,
-        lastSessionDate: saved.lastSessionDate || null,
-      });
-    } else {
-      setCards(initializeCards(charactersData));
-    }
-    setReady(true);
+    let cancelled = false;
+    (async () => {
+      const saved = await loadState(SEED);
+      if (cancelled) return;
+      if (saved?.words?.length) {
+        setWords(saved.words);
+        setMeta({
+          streak: saved.meta?.streak || 0,
+          lastSessionDate: saved.meta?.lastSessionDate || null,
+          toneSlipLog: saved.meta?.toneSlipLog || [],
+        });
+      } else {
+        setWords(initializeWords(SEED));
+      }
+      setReady(true);
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
-    if (!ready || cards.length === 0) return;
-    persist(cards, meta);
-  }, [cards, meta, ready]);
+    let cancelled = false;
+    loadDict()
+      .then((entries) => {
+        if (!cancelled) setDict(entries);
+      })
+      .catch(() => {
+        if (!cancelled) setDictError(true);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!dict || !ready) return;
+    setWords((prev) => enrichSeedMeanings(prev, dict));
+  }, [dict, ready]);
+
+  useEffect(() => {
+    if (!ready || words.length === 0) return;
+    persist(words, meta);
+  }, [words, meta, ready]);
 
   useEffect(() => {
     if (screen !== 'session' || !session) return undefined;
@@ -65,27 +119,43 @@ export default function App() {
     return () => clearInterval(id);
   }, [screen, session]);
 
-  const counts = useMemo(() => sessionCounts(cards, nowTick), [cards, nowTick]);
-  const minutes = estimateMinutes(cards, nowTick);
+  const counts = useMemo(() => sessionCounts(words, nowTick), [words, nowTick]);
+  const minutes = estimateMinutes(words, nowTick);
+  const coverage = useMemo(() => characterCoverage(words, COVERAGE_LIST), [words]);
+  const lookupHits = useMemo(
+    () => (screen === 'lookup' ? searchDict(dict, lookupQuery) : []),
+    [dict, lookupQuery, screen],
+  );
+  const libraryHits = useMemo(() => {
+    if (screen !== 'library') return [];
+    const q = libraryQuery.trim();
+    const list = [...words].sort((a, b) => a.word.localeCompare(b.word, 'zh'));
+    if (!q) return list;
+    return list.filter((w) => (
+      w.word.includes(q)
+      || (w.pinyin || '').toLowerCase().includes(q.toLowerCase())
+      || (w.meaning || '').toLowerCase().includes(q.toLowerCase())
+    ));
+  }, [words, libraryQuery, screen]);
 
-  function goNext(nextCards, nextSession) {
+  function goNext(nextWords, nextSession) {
     const now = Date.now();
     if (now >= nextSession.endsAt) {
-      finishSession(nextCards, nextSession);
+      finishSession(nextWords, nextSession);
       return;
     }
     const ctx = {
       hasVoice: canPlayAudio(),
       intros: nextSession.intros,
-      learnedNew: learnedNewCount(nextCards, now),
+      learnedNew: learnedNewCount(nextWords, now),
       promptIndex: nextSession.promptIndex,
     };
-    const nxt = nextItem(nextCards, ctx, now);
+    const nxt = nextItem(nextWords, ctx, now);
     if (!nxt) {
-      finishSession(nextCards, nextSession);
+      finishSession(nextWords, nextSession);
       return;
     }
-    setCards(nextCards);
+    setWords(nextWords);
     setItem(nxt);
     setSession({
       ...nextSession,
@@ -94,9 +164,10 @@ export default function App() {
     setInput('');
     setRevealed(false);
     setFeedback(null);
-    setChoices(nxt.type === 'listen' ? choicesFor(nxt.card, nextCards) : []);
-    if (nxt.type === 'listen' || nxt.type === 'intro') {
-      speakChinese(nxt.card.word || nxt.card.char);
+    setSlips([]);
+    setChoices(nxt.type === 'listen' ? choicesFor(nxt.card, nextWords) : []);
+    if (nxt.type === 'listen' || nxt.type === 'intro' || nxt.type === 'listen-type') {
+      speakChinese(nxt.card.word);
     }
   }
 
@@ -114,16 +185,18 @@ export default function App() {
       skipped: 0,
       correct: 0,
       incorrect: 0,
+      toneSlips: 0,
     };
     setScreen('session');
-    goNext(cards, nextSession);
+    goNext(words, nextSession);
   }
 
-  function finishSession(nextCards, nextSession) {
+  function finishSession(nextWords, nextSession) {
     const streakMeta = updateStreak(meta, Date.now());
-    setCards(nextCards);
-    setMeta(streakMeta);
-    persist(nextCards, streakMeta);
+    const nextMeta = { ...meta, ...streakMeta };
+    setWords(nextWords);
+    setMeta(nextMeta);
+    persist(nextWords, nextMeta);
     setSession(nextSession);
     setScreen('summary');
     setItem(null);
@@ -143,41 +216,76 @@ export default function App() {
       updated = startLearning(item.card, now);
       patch.newLearned = session.newLearned + 1;
     }
-    goNext(replaceCard(cards, updated), { ...session, ...patch });
+    goNext(replaceCard(words, updated), { ...session, ...patch });
   }
 
-  function grade(correct) {
+  function grade(kind, nextSlips = []) {
     const now = Date.now();
-    const updated = correct ? onCorrect(item.card, now) : onFail(item.card, now);
-    setFeedback(correct ? 'correct' : 'incorrect');
+    let updated;
+    if (kind === 'correct') updated = onCorrect(item.card, now);
+    else if (kind === 'tone-slip') updated = onToneSlip(item.card, now, nextSlips);
+    else updated = onFail(item.card, now);
+
+    setFeedback(kind);
+    setSlips(nextSlips);
     setRevealed(true);
-    setCards(replaceCard(cards, updated));
-    speakChinese(item.card.word || item.card.char);
+    setWords(replaceCard(words, updated));
+    if (kind === 'tone-slip') setMeta((prev) => appendSlips(prev, nextSlips));
+    speakChinese(item.card.word);
     setSession({
       ...session,
       reviewed: session.reviewed + 1,
-      correct: session.correct + (correct ? 1 : 0),
-      incorrect: session.incorrect + (correct ? 0 : 1),
+      correct: session.correct + (kind === 'correct' ? 1 : 0),
+      incorrect: session.incorrect + (kind === 'incorrect' ? 1 : 0),
+      toneSlips: session.toneSlips + (kind === 'tone-slip' ? 1 : 0),
     });
   }
 
   function handlePinyinSubmit() {
     if (!input.trim()) return;
-    grade(pinyinMatches(input, item.card.pinyin));
+    const result = gradePinyin(input, item.card.pinyin);
+    grade(result.result, result.slips);
   }
 
   function handleContinue() {
-    const current = cards.find((c) => c.id === item.card.id) || item.card;
-    goNext(replaceCard(cards, current), session);
+    const current = words.find((c) => c.id === item.card.id) || item.card;
+    goNext(replaceCard(words, current), session);
   }
 
-  function handleReset() {
-    clearState();
-    const fresh = initializeCards(charactersData);
-    setCards(fresh);
-    setMeta({ streak: 0, lastSessionDate: null });
+  async function handleReset() {
+    await clearState();
+    const fresh = initializeWords(SEED);
+    setWords(fresh);
+    setMeta({ streak: 0, lastSessionDate: null, toneSlipLog: [] });
     setScreen('home');
     setSession(null);
+    setNotice('');
+  }
+
+  function handleAdd(entry) {
+    const { words: next, exists } = addDictWord(words, entry);
+    if (exists) {
+      setNotice(`${entry.word} is already in your library.`);
+      return;
+    }
+    setWords(next);
+    setNotice(`Added ${entry.word} to your library.`);
+  }
+
+  async function handleImport(event) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    try {
+      const parsed = parseImportedState(await file.text());
+      setWords(parsed.words);
+      setMeta(parsed.meta);
+      persist(parsed.words, parsed.meta);
+      setNotice(`Imported ${parsed.words.length} words.`);
+      setScreen('home');
+    } catch {
+      setNotice('Couldn’t read that backup file.');
+    }
   }
 
   if (!ready) {
@@ -201,9 +309,12 @@ export default function App() {
             <div><dt>Reviewed</dt><dd>{session.reviewed}</dd></div>
             <div><dt>New</dt><dd>{session.newLearned}</dd></div>
             <div><dt>Already knew</dt><dd>{session.known}</dd></div>
-            <div><dt>Streak</dt><dd>{meta.streak}d</dd></div>
+            <div><dt>Tone slips</dt><dd>{session.toneSlips}</dd></div>
           </dl>
-          <p className="muted">Due {sessionCounts(cards).due} · {sessionCounts(cards).newLeft}/{DAILY_NEW_LIMIT} new left today</p>
+          <p className="muted">
+            Due {sessionCounts(words).due} · {sessionCounts(words).newLeft}/{DAILY_NEW_LIMIT} new left today
+            · {coverage.known}/{coverage.total} characters known
+          </p>
           <button className="primary" onClick={() => setScreen('home')}>Done</button>
         </section>
       </div>
@@ -215,16 +326,12 @@ export default function App() {
     return (
       <div className="shell session">
         <header className="session-bar">
-          <button className="text-btn" onClick={() => finishSession(cards, session)} aria-label="End session">✕</button>
+          <button className="text-btn" onClick={() => finishSession(words, session)} aria-label="End session">✕</button>
           <span className="count">{session.reviewed + session.known + session.skipped + session.newLearned}</span>
           <span className="clock">{formatMs(remaining)}</span>
         </header>
         {item.type === 'intro' && (
-          <IntroCard
-            card={item.card}
-            canLearn={item.canLearn}
-            onChoice={handleIntro}
-          />
+          <IntroCard card={item.card} canLearn={item.canLearn} onChoice={handleIntro} />
         )}
         {item.type === 'read' && (
           <ReadCard
@@ -233,6 +340,21 @@ export default function App() {
             setInput={setInput}
             revealed={revealed}
             feedback={feedback}
+            slips={slips}
+            typed={input}
+            onSubmit={handlePinyinSubmit}
+            onContinue={handleContinue}
+          />
+        )}
+        {item.type === 'listen-type' && (
+          <ListenTypeCard
+            card={item.card}
+            input={input}
+            setInput={setInput}
+            revealed={revealed}
+            feedback={feedback}
+            slips={slips}
+            typed={input}
             onSubmit={handlePinyinSubmit}
             onContinue={handleContinue}
           />
@@ -243,10 +365,87 @@ export default function App() {
             choices={choices}
             revealed={revealed}
             feedback={feedback}
-            onPick={(ch) => grade(ch === item.card.char)}
+            slips={slips}
+            onPick={(word) => grade(word === item.card.word ? 'correct' : 'incorrect')}
             onContinue={handleContinue}
           />
         )}
+      </div>
+    );
+  }
+
+  if (screen === 'lookup') {
+    return (
+      <div className="shell">
+        <header className="top">
+          <button className="text-btn back" onClick={() => { setScreen('home'); setNotice(''); }}>← Home</button>
+          <p className="brand">Look up a word</p>
+        </header>
+        <section className="panel">
+          <input
+            className="search"
+            value={lookupQuery}
+            onChange={(e) => setLookupQuery(e.target.value)}
+            placeholder="汉字, ni3hao3, or english"
+            aria-label="Dictionary search"
+            autoFocus
+          />
+          {!dict && !dictError && <p className="muted">Loading dictionary…</p>}
+          {dictError && <p className="warn">Couldn’t load CC-CEDICT. Check your connection and refresh.</p>}
+          {dict && lookupQuery.trim() && lookupHits.length === 0 && (
+            <p className="muted">No matches.</p>
+          )}
+          <ul className="hits">
+            {lookupHits.map((entry) => {
+              const inLib = alreadyInLibrary(words, entry);
+              return (
+                <li key={`${entry.word}:${entry.pinyin}`}>
+                  <div>
+                    <p className="hit-word">{entry.word}</p>
+                    <p className="hit-meta">{toMarked(entry.pinyin)} · {entry.meaning}</p>
+                  </div>
+                  {inLib ? (
+                    <span className="pill">In library</span>
+                  ) : (
+                    <button className="secondary small" onClick={() => handleAdd(entry)}>Add</button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          {notice && <p className="muted">{notice}</p>}
+        </section>
+      </div>
+    );
+  }
+
+  if (screen === 'library') {
+    return (
+      <div className="shell">
+        <header className="top">
+          <button className="text-btn back" onClick={() => setScreen('home')}>← Home</button>
+          <p className="brand">Library · {words.length} words</p>
+        </header>
+        <section className="panel">
+          <input
+            className="search"
+            value={libraryQuery}
+            onChange={(e) => setLibraryQuery(e.target.value)}
+            placeholder="Filter your words"
+            aria-label="Filter library"
+          />
+          <ul className="hits library">
+            {libraryHits.map((card) => (
+              <li key={card.id}>
+                <div>
+                  <p className="hit-word">{card.word}</p>
+                  <p className="hit-meta">{toMarked(card.pinyin)} · {card.meaning}</p>
+                </div>
+                <span className={`pill ${card.phase}`}>{phaseLabel(card.phase)}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
       </div>
     );
   }
@@ -268,14 +467,28 @@ export default function App() {
           <li><strong>{counts.newLeft}</strong> new today</li>
         </ul>
         <div className="progress" aria-hidden="true">
-          <div className="progress-fill" style={{ width: `${Math.min(100, (counts.known / counts.total) * 100)}%` }} />
+          <div className="progress-fill" style={{ width: `${Math.min(100, (coverage.known / Math.max(1, coverage.total)) * 100)}%` }} />
         </div>
         <p className="muted">
-          Known {counts.known} / {counts.total} · grade 1–2 character list
+          Characters known {coverage.known} / {coverage.total} · from {counts.known} words in your library ({counts.total} total)
         </p>
+        {notice && <p className="muted">{notice}</p>}
       </section>
+      <nav className="home-nav">
+        <button className="ghost" onClick={() => { setNotice(''); setScreen('lookup'); }}>Look up a word</button>
+        <button className="ghost" onClick={() => setScreen('library')}>Library</button>
+      </nav>
       <footer>
+        <button className="text-btn" onClick={() => downloadBackup(words, meta)}>Export backup</button>
+        <button className="text-btn" onClick={() => fileRef.current?.click()}>Import backup</button>
         <button className="text-btn" onClick={handleReset}>Reset progress</button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="application/json"
+          hidden
+          onChange={handleImport}
+        />
       </footer>
     </div>
   );
@@ -311,14 +524,17 @@ function PlayButton({ className, text, label }) {
   );
 }
 
+function Han({ word }) {
+  return <div className={`han${word.length > 1 ? ' han-word' : ''}`}>{word}</div>;
+}
+
 function IntroCard({ card, canLearn, onChoice }) {
   return (
     <article className="card">
-      <p className="prompt">Do you know this character?</p>
-      <div className="han">{card.char}</div>
-      <p className="word">{card.word}</p>
+      <p className="prompt">Do you know this word?</p>
+      <Han word={card.word} />
       <p className="meaning">{card.meaning}</p>
-      <PlayButton className="ghost" text={card.word || card.char} label="Play again" />
+      <PlayButton className="ghost" text={card.word} label="Play again" />
       <div className="stack">
         <button className="secondary" onClick={() => onChoice('known')}>I already read this</button>
         {canLearn ? (
@@ -332,68 +548,99 @@ function IntroCard({ card, canLearn, onChoice }) {
   );
 }
 
-function ReadCard({ card, input, setInput, revealed, feedback, onSubmit, onContinue }) {
+function PinyinForm({ input, setInput, onSubmit }) {
+  return (
+    <form
+      className="answer"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSubmit();
+      }}
+    >
+      <input
+        id="pinyin-input"
+        name="pinyin"
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        placeholder="ni3hao3 or nǐhǎo"
+        aria-label="Pinyin"
+        autoComplete="off"
+        autoCapitalize="off"
+        autoCorrect="off"
+        autoFocus
+      />
+      <button className="primary" type="submit">Submit</button>
+    </form>
+  );
+}
+
+function ReadCard({ card, input, setInput, revealed, feedback, slips, typed, onSubmit, onContinue }) {
   return (
     <article className="card">
       <p className="prompt">Type the pinyin</p>
-      <div className="han">{card.char}</div>
+      <Han word={card.word} />
       {!revealed ? (
-        <form
-          className="answer"
-          onSubmit={(e) => {
-            e.preventDefault();
-            onSubmit();
-          }}
-        >
-          <input
-            id="pinyin-input"
-            name="pinyin"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="ni3 or nǐ"
-            aria-label="Pinyin"
-            autoComplete="off"
-            autoCapitalize="off"
-            autoCorrect="off"
-            autoFocus
-          />
-          <button className="primary" type="submit">Submit</button>
-        </form>
+        <PinyinForm input={input} setInput={setInput} onSubmit={onSubmit} />
       ) : (
-        <Reveal card={card} feedback={feedback} onContinue={onContinue} />
+        <Reveal card={card} feedback={feedback} slips={slips} typed={typed} onContinue={onContinue} />
       )}
     </article>
   );
 }
 
-function ListenCard({ card, choices, revealed, feedback, onPick, onContinue }) {
+function ListenTypeCard({ card, input, setInput, revealed, feedback, slips, typed, onSubmit, onContinue }) {
   return (
     <article className="card">
-      <p className="prompt">Listen, then pick the character</p>
-      <PlayButton className="speaker" text={card.word || card.char} label="Play" />
+      <p className="prompt">Listen, then type the pinyin</p>
+      <PlayButton className="speaker" text={card.word} label="Play" />
+      {!revealed ? (
+        <PinyinForm input={input} setInput={setInput} onSubmit={onSubmit} />
+      ) : (
+        <Reveal card={card} feedback={feedback} slips={slips} typed={typed} onContinue={onContinue} />
+      )}
+    </article>
+  );
+}
+
+function ListenCard({ card, choices, revealed, feedback, slips, onPick, onContinue }) {
+  return (
+    <article className="card">
+      <p className="prompt">Listen, then pick the word</p>
+      <PlayButton className="speaker" text={card.word} label="Play" />
       {!revealed ? (
         <div className="choices">
           {choices.map((c) => (
-            <button type="button" key={c.char} className="choice" onClick={() => onPick(c.char)}>
-              {c.char}
+            <button type="button" key={c.id} className="choice word-choice" onClick={() => onPick(c.word)}>
+              {c.word}
             </button>
           ))}
         </div>
       ) : (
-        <Reveal card={card} feedback={feedback} onContinue={onContinue} />
+        <Reveal card={card} feedback={feedback} slips={slips} onContinue={onContinue} />
       )}
     </article>
   );
 }
 
-function Reveal({ card, feedback, onContinue }) {
+function gradeCopy(feedback) {
+  if (feedback === 'correct') return 'Right';
+  if (feedback === 'tone-slip') return 'Right syllables, wrong tone';
+  return 'Not quite';
+}
+
+function Reveal({ card, feedback, slips, typed, onContinue }) {
   return (
     <div className="reveal">
-      <p className={`grade ${feedback}`}>{feedback === 'correct' ? 'Right' : 'Not quite'}</p>
-      <p className="pinyin">{card.pinyin}</p>
-      <p className="word">{card.word}<span> · {card.wordPinyin}</span></p>
+      <p className={`grade ${feedback}`}>{gradeCopy(feedback)}</p>
+      <p className="pinyin">{toMarked(card.pinyin)}</p>
+      {feedback === 'tone-slip' && slips?.length > 0 && (
+        <p className="muted">
+          You typed {typed || '—'} · expected {slips.map((s) => `${s.syllable}${s.expected}`).join(' ')}
+        </p>
+      )}
+      <p className="word">{card.word}</p>
       <p className="meaning">{card.meaning}</p>
-      <PlayButton className="ghost" text={card.word || card.char} label="Play word" />
+      <PlayButton className="ghost" text={card.word} label="Play word" />
       <button className="primary" onClick={onContinue} autoFocus>Continue</button>
     </div>
   );

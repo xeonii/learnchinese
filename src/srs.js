@@ -8,6 +8,8 @@ export const MIN_EASE = 1.3;
 export const DAILY_NEW_LIMIT = 10;
 export const MAX_INTROS_PER_SESSION = 40;
 export const SESSION_MINUTES = 12;
+export const TONE_SLIP_MS = 2 * 60 * 1000;
+export const TONE_SLIP_REVIEW_MS = 10 * 60 * 1000;
 
 export function todayKey(now = Date.now()) {
   return new Date(now).toDateString();
@@ -91,6 +93,18 @@ export function onFail(card, now = Date.now()) {
   };
 }
 
+/** Right syllables, wrong tone: come back soon, no lapse / ease penalty. */
+export function onToneSlip(card, now = Date.now(), slips = []) {
+  const log = [...(card.toneSlipLog || []), ...slips].slice(-30);
+  const wait = card.phase === 'review' ? TONE_SLIP_REVIEW_MS : TONE_SLIP_MS;
+  return {
+    ...card,
+    due: now + wait,
+    toneSlips: (card.toneSlips || 0) + 1,
+    toneSlipLog: log,
+  };
+}
+
 export function isDue(card, now = Date.now()) {
   return ['learning', 'relearning', 'review'].includes(card.phase) && card.due <= now;
 }
@@ -108,7 +122,13 @@ export function dueCards(cards, now = Date.now()) {
 export function unseenCards(cards) {
   return cards
     .filter((card) => card.phase === 'new')
-    .sort((a, b) => (a.tier - b.tier) || a.id - b.id);
+    .sort((a, b) => {
+      const tier = (a.tier || 1) - (b.tier || 1);
+      if (tier !== 0) return tier;
+      const sort = (a.sortIndex ?? 0) - (b.sortIndex ?? 0);
+      if (sort !== 0) return sort;
+      return String(a.id).localeCompare(String(b.id));
+    });
 }
 
 export function learnedNewCount(cards, now = Date.now()) {

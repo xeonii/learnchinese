@@ -77,21 +77,34 @@ export function nextItem(cards, ctx, now = Date.now()) {
   return null;
 }
 
+/**
+ * Exercise ladder:
+ *   learning step 0 / relearning → listen multiple-choice (if audio)
+ *   learning later steps → see the word, type pinyin
+ *   review → audio only, type pinyin (MC retired)
+ */
 export function promptFor(card, ctx) {
-  const listenOk = ctx.hasVoice && (card.phase !== 'learning' || (card.step ?? 0) > 0);
-  if (listenOk && ((card.step ?? 0) > 0 || ctx.promptIndex % 2 === 1)) {
-    return { type: 'listen', card };
+  const step = card.step ?? 0;
+  const listenOk = !!ctx.hasVoice;
+
+  if (card.phase === 'learning' && step === 0) {
+    return { type: listenOk ? 'listen' : 'read', card };
+  }
+  if (card.phase === 'relearning') {
+    return { type: listenOk ? 'listen' : 'read', card };
+  }
+  if (card.phase === 'review') {
+    return { type: listenOk ? 'listen-type' : 'read', card };
   }
   return { type: 'read', card };
 }
 
 export function choicesFor(card, allCards, n = 4) {
-  const forbidden = new Set([...card.word].filter((ch) => ch !== card.char));
-  const others = allCards.filter((c) => c.char !== card.char && !forbidden.has(c.char));
+  const others = allCards.filter((c) => c.id !== card.id && c.word !== card.word);
   const picked = [];
   const add = (candidate) => {
-    if (!candidate || candidate.char === card.char) return;
-    if (picked.some((c) => c.char === candidate.char)) return;
+    if (!candidate || candidate.word === card.word) return;
+    if (picked.some((c) => c.word === candidate.word)) return;
     if (picked.length >= n - 1) return;
     picked.push(candidate);
   };
@@ -99,8 +112,12 @@ export function choicesFor(card, allCards, n = 4) {
   const key = syllableKey(card.pinyin);
   others.filter((c) => syllableKey(c.pinyin) === key).forEach(add);
 
-  const group = LOOKALIKES.find((g) => g.includes(card.char)) || [];
-  group.forEach((ch) => add(others.find((c) => c.char === ch)));
+  for (const ch of card.word || '') {
+    const group = LOOKALIKES.find((g) => g.includes(ch)) || [];
+    group.forEach((look) => {
+      others.filter((c) => c.word.includes(look)).forEach(add);
+    });
+  }
 
   shuffle(others).forEach(add);
 
@@ -120,4 +137,11 @@ export function sessionCounts(cards, now = Date.now()) {
     skipped: cards.filter((c) => c.phase === 'skipped').length,
     total: cards.length,
   };
+}
+
+export function phaseLabel(phase) {
+  if (phase === 'learning' || phase === 'relearning') return 'learning';
+  if (phase === 'review') return 'review';
+  if (phase === 'skipped') return 'skipped';
+  return 'new';
 }

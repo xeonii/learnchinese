@@ -4,41 +4,39 @@ A 5–15 minute daily session for heritage Mandarin speakers: attach 汉字 to w
 
 **Live:** https://xeonii.github.io/learnchinese/
 
+The scheduled unit is the **word**. The 483-character list is a coverage map, not the deck. Roadmap: [PLAN.md](PLAN.md).
+
 ## How a session works
 
 Open the app, tap **Start practice**. There is no drill menu.
 
-1. **Intro** — huge character, example word, audio.  
+1. **Intro** — huge word, English gloss, audio.  
    I already read this / Learn it / Skip — I don’t know this word
-2. **Recall** — type pinyin (`ni3` or `nǐ`) or listen and pick the character among lookalikes/homophones.
-3. **Same-day relearn** — misses come back in about a minute, not tomorrow.
-4. Stop at ~12 minutes or when the queue is empty.
+2. **Learning** — listen, then pick the word among lookalikes/homophones.
+3. **Then type pinyin** for the whole word (`ni3hao3` or `nǐhǎo`). Toneless `nihao` fails. `v` = `ü`.
+4. **After graduation** — audio only, type pinyin (multiple choice is retired).
+5. **Tone slip** — right syllables, wrong tone: comes back sooner, not a full fail.
+6. Stop at ~12 minutes or when the queue is empty.
 
-New 字 cap: 10/day. Known 字 are buried (21 days). Skipped words stay out of the way. The rest of the list is still waiting tomorrow — you will not see “all done” after tapping “I don’t know.”
+New words cap: 10/day. Known words are buried (21 days). Skipped words stay out of the way.
+
+Look up any word in the bundled dictionary and add it to your library. Export/import a JSON backup from the home screen.
+
+## Progress
+
+A 字 counts as known after it has been read correctly in two different words, or in one graduated word. The home bar is that coverage number, not “cards remaining.”
 
 ## Data
 
-483 simplified 字:
+Seed library: unique example words from 483 simplified 字 (课标《识字、写字教学基本字表》300 + high-frequency G1–2 extras).
 
-- 300 from 课标《识字、写字教学基本字表》
-- 183 extra high-frequency G1–2 字
+Dictionary: a compact copy of [CC-CEDICT](https://www.mdbg.net/chinese/dictionary?page=cc-cedict) (~121k entries), [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). See `public/CEDICT-LICENSE.txt`.
 
-Each card has pinyin, a short English gloss, and a spoken word to hang the 字 on.
-
-Progress is against this set, not HSK.
-
-## Pinyin
-
-Numbered (`ni3`) and marked (`nǐ`) both count. Toneless `ni` does not. `v` = `ü` (`nv3` 女).
+Progress lives in IndexedDB (`koudaozi`). Older `koudaozi_v2` character progress is migrated onto the example-word cards.
 
 ## Audio
 
-Plays the **汉字 / 词语**, never pinyin:
-
-1. Native `zh-*` voice via Web Speech API when the browser has one
-2. Otherwise Mandarin dictionary audio of the same Chinese text
-
-Listen prompts (hear the word → pick 字) show up on the second pass, about 45 seconds later in the same session.
+Plays the **词语**, never pinyin, via dictionary audio then a `zh-*` voice if needed.
 
 ## Dev
 
@@ -46,6 +44,12 @@ Listen prompts (hear the word → pick 字) show up on the second pass, about 45
 npm install
 npm test
 npm run dev
+```
+
+Rebuild the compact dictionary (needs a CC-CEDICT download):
+
+```bash
+python3 scripts/build_cedict.py /path/to/cedict_1_0_ts_utf-8_mdbg.txt.gz
 ```
 
 Vite base path is `/learnchinese/` for GitHub Pages.

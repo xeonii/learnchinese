@@ -139,7 +139,10 @@ button, input {
 .muted { color: var(--muted); font-size: 13px; margin: 12px 0 0; }
 .warn { color: var(--cinnabar-dark); font-size: 13px; line-height: 1.5; margin: 16px 0 0; }
 
-footer { margin-top: auto; text-align: center; }
+footer {
+  margin-top: auto;
+  text-align: center;
+}
 
 .text-btn {
   background: none;
@@ -185,6 +188,10 @@ footer { margin-top: auto; text-align: center; }
   font-weight: 700;
   margin: 12px 0 8px;
   font-family: 'Noto Sans SC', 'Source Han Sans SC', 'PingFang SC', sans-serif;
+}
+
+.han-word {
+  font-size: clamp(3.2rem, 16vw, 5.4rem);
 }
 
 .word { font-size: 22px; margin: 4px 0; }
@@ -245,6 +252,96 @@ footer { margin-top: auto; text-align: center; }
 .grade { font-weight: 700; font-size: 20px; margin: 8px 0 0; }
 .grade.correct { color: var(--right); }
 .grade.incorrect { color: var(--wrong); }
+.grade.tone-slip { color: #a15c12; }
+
+.word-choice {
+  font-size: 28px;
+}
+
+.home-nav {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.home-nav .ghost {
+  width: 100%;
+}
+
+.search {
+  width: 100%;
+  font-size: 18px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: #fff;
+}
+
+.hits {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 60dvh;
+  overflow: auto;
+}
+
+.hits li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.hit-word {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  font-family: 'Noto Sans SC', 'Source Han Sans SC', 'PingFang SC', sans-serif;
+}
+
+.hit-meta {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.pill {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+
+.pill.learning, .pill.relearning { color: var(--cinnabar); border-color: #e8c4bf; }
+.pill.review { color: var(--moss); border-color: #c7d9ce; }
+
+.secondary.small {
+  padding: 8px 12px;
+  font-size: 14px;
+}
+
+.back {
+  display: block;
+  padding: 0 0 8px;
+  text-align: left;
+}
+
+footer {
+  margin-top: auto;
+  text-align: center;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+}
 
 .facts {
   display: grid;

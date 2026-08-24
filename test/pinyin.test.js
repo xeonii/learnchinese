@@ -1,4 +1,4 @@
-import { pinyinMatches, toCanonical } from '../src/pinyin.js';
+import { pinyinMatches, toCanonical, gradePinyin, toMarked, syllableKey } from '../src/pinyin.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -25,6 +25,7 @@ test('toneless input is rejected', () => {
   assert.equal(pinyinMatches('ni', 'nǐ'), false);
   assert.equal(pinyinMatches('yi', 'yī'), false);
   assert.equal(pinyinMatches('hao', 'hǎo'), false);
+  assert.equal(gradePinyin('nihao', 'nǐhǎo').result, 'wrong');
 });
 
 test('neutral tone particles', () => {
@@ -37,4 +38,31 @@ test('canonical form', () => {
   assert.equal(toCanonical('nǐ'), 'ni3');
   assert.equal(toCanonical('nǚ'), 'nv3');
   assert.equal(toCanonical('Zhōngguó'), 'zhong1guo2');
+});
+
+test('tone slip is distinct from a wrong syllable', () => {
+  const slip = gradePinyin('ni2', 'nǐ');
+  assert.equal(slip.result, 'tone-slip');
+  assert.equal(slip.slips[0].pair, '3→2');
+
+  const wordSlip = gradePinyin('ni2hao3', 'nǐhǎo');
+  assert.equal(wordSlip.result, 'tone-slip');
+  assert.deepEqual(wordSlip.slips.map((s) => s.pair), ['3→2']);
+
+  const wrong = gradePinyin('wo3', 'nǐ');
+  assert.equal(wrong.result, 'wrong');
+});
+
+test('partial tones are not a tone slip', () => {
+  assert.equal(gradePinyin('ni3hao', 'nǐhǎo').result, 'wrong');
+});
+
+test('toMarked round-trips numbered pinyin', () => {
+  assert.equal(toMarked('ni3hao3'), 'nǐhǎo');
+  assert.equal(toMarked('nv3'), 'nǚ');
+  assert.equal(toMarked('zhong1guo2'), 'zhōngguó');
+});
+
+test('syllableKey strips tones', () => {
+  assert.equal(syllableKey('nǐhǎo'), syllableKey('ni2hao1'));
 });

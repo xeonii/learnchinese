@@ -7,7 +7,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "node --test test/*.test.js",
-    "data": "python3 scripts/build_chars.py"
+    "data": "python3 scripts/build_chars.py",
+    "data:cedict": "python3 scripts/build_cedict.py"
   },
   "dependencies": {
     "react": "^18.2.0",
