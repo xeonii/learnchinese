@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import charactersData from './data/characters.json';
-import { speakChinese, canPlayAudio } from './audio.js';
+import { speakChinese, canPlayAudio, unlockAudio } from './audio.js';
 import { pinyinMatches } from './pinyin.js';
 import {
   DAILY_NEW_LIMIT,
@@ -101,6 +101,7 @@ export default function App() {
   }
 
   function startSession() {
+    unlockAudio();
     const now = Date.now();
     const nextSession = {
       startedAt: now,
@@ -280,6 +281,36 @@ export default function App() {
   );
 }
 
+function PlayButton({ className, text, label }) {
+  const [state, setState] = useState('idle');
+
+  async function play(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    setState('playing');
+    const ok = await speakChinese(text);
+    setState(ok ? 'idle' : 'error');
+  }
+
+  const isSpeaker = className === 'speaker';
+  return (
+    <>
+      <button
+        type="button"
+        className={`${className}${state === 'playing' ? ' is-playing' : ''}`}
+        onClick={play}
+        aria-label={label}
+        aria-busy={state === 'playing'}
+      >
+        {isSpeaker ? (state === 'playing' ? '…' : '▶') : label}
+      </button>
+      {state === 'error' && (
+        <p className="warn">Couldn’t play sound. Check the volume and tap play again.</p>
+      )}
+    </>
+  );
+}
+
 function IntroCard({ card, canLearn, onChoice }) {
   return (
     <article className="card">
@@ -287,7 +318,7 @@ function IntroCard({ card, canLearn, onChoice }) {
       <div className="han">{card.char}</div>
       <p className="word">{card.word}</p>
       <p className="meaning">{card.meaning}</p>
-      <button className="ghost" onClick={() => speakChinese(card.word || card.char)}>Play again</button>
+      <PlayButton className="ghost" text={card.word || card.char} label="Play again" />
       <div className="stack">
         <button className="secondary" onClick={() => onChoice('known')}>I already read this</button>
         {canLearn ? (
@@ -339,13 +370,11 @@ function ListenCard({ card, choices, revealed, feedback, onPick, onContinue }) {
   return (
     <article className="card">
       <p className="prompt">Listen, then pick the character</p>
-      <button className="speaker" onClick={() => speakChinese(card.word || card.char)} aria-label="Play">
-        ▶
-      </button>
+      <PlayButton className="speaker" text={card.word || card.char} label="Play" />
       {!revealed ? (
         <div className="choices">
           {choices.map((c) => (
-            <button key={c.char} className="choice" onClick={() => onPick(c.char)}>
+            <button type="button" key={c.char} className="choice" onClick={() => onPick(c.char)}>
               {c.char}
             </button>
           ))}
@@ -364,7 +393,7 @@ function Reveal({ card, feedback, onContinue }) {
       <p className="pinyin">{card.pinyin}</p>
       <p className="word">{card.word}<span> · {card.wordPinyin}</span></p>
       <p className="meaning">{card.meaning}</p>
-      <button className="ghost" onClick={() => speakChinese(card.word || card.char)}>Play word</button>
+      <PlayButton className="ghost" text={card.word || card.char} label="Play word" />
       <button className="primary" onClick={onContinue} autoFocus>Continue</button>
     </div>
   );
