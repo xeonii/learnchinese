@@ -329,9 +329,12 @@ function ReadCard({ card, input, setInput, revealed, feedback, hasVoice, onSubmi
           }}
         >
           <input
+            id="pinyin-input"
+            name="pinyin"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="ni3 或 nǐ"
+            aria-label="拼音"
             autoComplete="off"
             autoCapitalize="off"
             autoCorrect="off"
@@ -375,7 +378,7 @@ function Reveal({ card, feedback, hasVoice, onContinue }) {
     <div className="reveal">
       <p className={`grade ${feedback}`}>{feedback === 'correct' ? '对' : '不对'}</p>
       <p className="pinyin">{card.pinyin}</p>
-      <p className="word">{card.word} <span>{card.wordPinyin}</span></p>
+      <p className="word">{card.word}<span> · {card.wordPinyin}</span></p>
       <p className="meaning">{card.meaning}</p>
       {hasVoice && (
         <button className="ghost" onClick={() => speakChinese(card.word || card.char)}>听词语</button>
