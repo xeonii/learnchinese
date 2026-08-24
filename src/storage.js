@@ -79,7 +79,14 @@ export function migrateFromV2(old, seed) {
 }
 
 export function addDictWord(words, entry) {
-  if (alreadyInLibrary(words, entry)) return { words, added: null, exists: true };
+  if (alreadyInLibrary(words, entry)) {
+    const next = words.map((w) => (
+      w.word === entry.word && entry.meaning && w.meaning !== entry.meaning
+        ? { ...w, meaning: entry.meaning }
+        : w
+    ));
+    return { words: next, added: null, exists: true };
+  }
   const card = initializeWords([{
     id: makeWordId(entry.word, entry.pinyin, words),
     word: entry.word,
@@ -101,7 +108,7 @@ export function enrichSeedMeanings(words, dict) {
   }
   let changed = false;
   const next = words.map((w) => {
-    if (w.source !== 'seed' || w.phase !== 'new') return w;
+    if (w.source !== 'seed') return w;
     const hit = byWord.get(w.word);
     if (!hit || hit.meaning === w.meaning) return w;
     changed = true;

@@ -67,6 +67,7 @@ export default function App() {
   const [dict, setDict] = useState(null);
   const [dictError, setDictError] = useState(false);
   const [lookupQuery, setLookupQuery] = useState('');
+  const [lookupDebounced, setLookupDebounced] = useState('');
   const [libraryQuery, setLibraryQuery] = useState('');
   const [notice, setNotice] = useState('');
   const fileRef = useRef(null);
@@ -109,6 +110,11 @@ export default function App() {
   }, [dict, ready]);
 
   useEffect(() => {
+    const id = setTimeout(() => setLookupDebounced(lookupQuery), 120);
+    return () => clearTimeout(id);
+  }, [lookupQuery]);
+
+  useEffect(() => {
     if (!ready || words.length === 0) return;
     persist(words, meta);
   }, [words, meta, ready]);
@@ -123,8 +129,8 @@ export default function App() {
   const minutes = estimateMinutes(words, nowTick);
   const coverage = useMemo(() => characterCoverage(words, COVERAGE_LIST), [words]);
   const lookupHits = useMemo(
-    () => (screen === 'lookup' ? searchDict(dict, lookupQuery) : []),
-    [dict, lookupQuery, screen],
+    () => (screen === 'lookup' ? searchDict(dict, lookupDebounced) : []),
+    [dict, lookupDebounced, screen],
   );
   const libraryHits = useMemo(() => {
     if (screen !== 'library') return [];
@@ -264,12 +270,10 @@ export default function App() {
 
   function handleAdd(entry) {
     const { words: next, exists } = addDictWord(words, entry);
-    if (exists) {
-      setNotice(`${entry.word} is already in your library.`);
-      return;
-    }
     setWords(next);
-    setNotice(`Added ${entry.word} to your library.`);
+    setNotice(exists
+      ? `${entry.word} is already in your library.`
+      : `Added ${entry.word} to your library.`);
   }
 
   async function handleImport(event) {

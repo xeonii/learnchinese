@@ -59,7 +59,8 @@ test('v2 character cards migrate onto example-word cards', () => {
 test('dictionary search matches hanzi, numbered pinyin, and english', () => {
   const dict = [
     ['你好', 'ni3hao3', 'hello'],
-    ['电脑', 'dian4nao3', 'computer'],
+    ['键', 'jian4', 'key (on a piano or computer keyboard)'],
+    ['电脑', 'dian4nao3', 'computer; CL:臺|台[tai2]'],
     ['行', 'xing2', 'OK; to walk'],
     ['行', 'hang2', 'row; line'],
   ].map(inflateRow);
@@ -67,15 +68,17 @@ test('dictionary search matches hanzi, numbered pinyin, and english', () => {
   assert.equal(searchDict(dict, '你')[0].word, '你好');
   assert.equal(searchDict(dict, 'ni3hao3')[0].word, '你好');
   assert.equal(searchDict(dict, 'computer')[0].word, '电脑');
+  assert.equal(searchDict(dict, 'computer')[0].meaning, 'computer');
   assert.equal(searchDict(dict, 'xing2').length, 1);
   assert.equal(searchDict(dict, 'hang2')[0].pinyin, 'hang2');
 });
 
-test('adding a dict word is a no-op when it is already in the library', () => {
-  const words = initializeWords([{ word: '你好', pinyin: 'nǐhǎo', meaning: 'hello', tier: 1 }]);
-  const entry = inflateRow(['你好', 'ni3hao3', 'hello']);
+test('adding a dict word updates a seed gloss when the word already exists', () => {
+  const words = initializeWords([{ word: '电脑', pinyin: 'diànnǎo', meaning: 'brain', tier: 1, source: 'seed' }]);
+  const entry = inflateRow(['电脑', 'dian4nao3', 'computer']);
   assert.equal(alreadyInLibrary(words, entry), true);
-  const { exists, added } = addDictWord(words, entry);
+  const { exists, added, words: next } = addDictWord(words, entry);
   assert.equal(exists, true);
   assert.equal(added, null);
+  assert.equal(next.find((w) => w.word === '电脑').meaning, 'computer');
 });

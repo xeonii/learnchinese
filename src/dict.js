@@ -8,13 +8,39 @@ export function dictUrl() {
   return `${base}cedict.json.gz`;
 }
 
+export function cleanGloss(meaning) {
+  return String(meaning || '')
+    .replace(/\s*CL:[^;/]*/g, '')
+    .replace(/\s*;\s*;/g, ';')
+    .replace(/^[;\s]+|[;\s]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export function inflateRow(row) {
   return {
     word: row[0],
     pinyin: row[1],
-    meaning: row[2],
+    meaning: cleanGloss(row[2]),
     toneless: String(row[1] || '').replace(/[0-9]/g, ''),
   };
+}
+
+function escapeRe(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+const PINYIN_QUERY = /^[a-züv:0-9\s'\-āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜ]+$/i;
+
+function englishScore(meaning, lower, wordRe) {
+  if (!meaning) return 0;
+  if (meaning === lower) return 95;
+  if (meaning.startsWith(`${lower};`) || meaning.startsWith(`${lower},`) || meaning.startsWith(`${lower} `)) {
+    return 90;
+  }
+  if (wordRe.test(meaning)) return 85;
+  if (meaning.includes(lower)) return 35;
+  return 0;
 }
 
 export async function decodeGzipJson(buffer) {
@@ -55,8 +81,6 @@ export function lookupExact(dict, word) {
   return dict.filter((entry) => entry.word === word);
 }
 
-const PINYIN_QUERY = /^[a-züv:0-9\s'\-āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜ]+$/i;
-
 export function searchDict(dict, query, limit = 40) {
   const q = String(query || '').trim();
   if (!q || !dict?.length) return [];
@@ -74,32 +98,28 @@ export function searchDict(dict, query, limit = 40) {
     return [...exact, ...starts, ...contains].slice(0, limit);
   }
 
-  if (PINYIN_QUERY.test(q)) {
-    const canon = toCanonical(q);
-    const toneless = canon.replace(/[0-9]/g, '');
-    const hasTone = /[0-9]/.test(canon);
-    const out = [];
-    for (const entry of dict) {
-      const hit = hasTone
-        ? entry.pinyin === canon || entry.pinyin.startsWith(canon)
-        : entry.toneless === toneless || entry.toneless.startsWith(toneless);
-      if (hit) {
-        out.push(entry);
-        if (out.length >= limit) break;
-      }
+  const lower = q.toLowerCase();
+  const asPinyin = PINYIN_QUERY.test(q);
+  const canon = asPinyin ? toCanonical(q) : '';
+  const toneless = canon.replace(/[0-9]/g, '');
+  const hasTone = /[0-9]/.test(canon);
+  const wordRe = new RegExp(`(?:^|[;,:/()\\s])${escapeRe(lower)}(?:$|[;,:/()\\s])`);
+  const scored = [];
+
+  for (const entry of dict) {
+    let score = 0;
+    if (canon) {
+      if (entry.pinyin === canon) score = 100;
+      else if (hasTone && entry.pinyin.startsWith(canon)) score = 80;
+      else if (!hasTone && entry.toneless === toneless) score = 75;
+      else if (!hasTone && toneless.length >= 2 && entry.toneless.startsWith(toneless)) score = 60;
     }
-    if (out.length) return out;
+    score = Math.max(score, englishScore(entry.meaning.toLowerCase(), lower, wordRe));
+    if (score) scored.push({ entry, score, len: entry.word.length });
   }
 
-  const lower = q.toLowerCase();
-  const out = [];
-  for (const entry of dict) {
-    if (entry.meaning.toLowerCase().includes(lower)) {
-      out.push(entry);
-      if (out.length >= limit) break;
-    }
-  }
-  return out;
+  scored.sort((a, b) => b.score - a.score || a.len - b.len || a.entry.word.localeCompare(b.entry.word, 'zh'));
+  return scored.slice(0, limit).map((row) => row.entry);
 }
 
 export function alreadyInLibrary(words, entry) {
