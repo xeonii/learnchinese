@@ -105,7 +105,16 @@ export function onToneSlip(card, now = Date.now(), slips = []) {
   };
 }
 
+export function suspendCard(card) {
+  return { ...card, suspended: true };
+}
+
+export function unsuspendCard(card) {
+  return { ...card, suspended: false };
+}
+
 export function isDue(card, now = Date.now()) {
+  if (card.suspended) return false;
   return ['learning', 'relearning', 'review'].includes(card.phase) && card.due <= now;
 }
 
@@ -121,7 +130,7 @@ export function dueCards(cards, now = Date.now()) {
 
 export function unseenCards(cards) {
   return cards
-    .filter((card) => card.phase === 'new')
+    .filter((card) => card.phase === 'new' && !card.suspended)
     .sort((a, b) => {
       const tier = (a.tier || 1) - (b.tier || 1);
       if (tier !== 0) return tier;

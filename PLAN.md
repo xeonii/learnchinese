@@ -116,23 +116,15 @@ A thin lookup + add-to-library screen ships with Phase 1 so the bundled dictiona
 usable immediately. The full library browser, suggestions, and example sentences stay
 in Phase 2.
 
-### Phase 2 — Personal word library + dictionary lookup
+### Phase 2 — Personal word library + dictionary lookup + miss review — **done**
 
-*Goal: the "stored library of words" — one place where everything you're learning lives.*
+*Goal: the "stored library of words" — one place where everything you're learning lives, plus an honest daily review loop that catches missed cards.*
 
-- **Library screen.** Searchable, sortable list of every word in the system: status
-  (new / learning / review / known / suspended), due date, lapse count, tone-slip
-  count. Suspend, un-suspend, or edit any card.
-- **Dictionary search.** Look up by characters, pinyin (`ni3hao3`, `nǐhǎo`, or
-  toneless), or English against CC-CEDICT. One tap adds a word to the library and the
-  new-card queue. This is how the deck grows beyond the seed list: with words from the
-  learner's actual life.
-- **Smart suggestions.** Rank candidate new words by (a) frequency in everyday text
-  and (b) "one new character away" — words where the learner already knows all
-  characters but one. This makes each new character arrive pre-contextualized.
-- **Example sentences.** Attach 1–3 short sentences per word from Tatoeba's
-  CC-licensed Chinese–English sentence pairs (ship a curated subset). These become the
-  cloze material in Phase 3.
+- **Library screen.** ✓ Searchable, sortable list of every word in the system with filter chips (All / Due / Learning / Missed today / Added / Seed / Skipped / Suspended). Tap a row to see details and suspend/unsuspend the card.
+- **Dictionary search polish.** ✓ Look up by characters, pinyin (`ni3hao3`, `nǐhǎo`, or toneless), or English against CC-CEDICT. Play button per hit. One tap adds a word to the library and the new-card queue. This is how the deck grows beyond the seed list: with words from the learner's actual life.
+- **Review misses.** ✓ During session, track each fail/unknown/tone-slip/unknown-intro with deduplication by severity. After session, offer "Review misses" button. Miss session: no timer, no intros, no MC; upgrades listen → read for learning, listen-type for review; fail rotates to end, tone-slip stays, correct removes or applies onCorrect logic. Extra grades do not rewrite long-term intervals (Pleco-style ignore for overtime).
+- **Smart suggestions.** Rank candidate new words by (a) frequency in everyday text and (b) "one new character away" — words where the learner already knows all characters but one. This makes each new character arrive pre-contextualized. *Deferred to Phase 3.*
+- **Example sentences.** Attach 1–3 short sentences per word from Tatoeba's CC-licensed Chinese–English sentence pairs (ship a curated subset). These become the cloze material in Phase 3. *Deferred to Phase 3.*
 
 ### Phase 3 — Reading practice with tap-for-pinyin
 
