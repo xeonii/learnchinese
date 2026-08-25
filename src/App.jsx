@@ -15,6 +15,9 @@ import {
   onFail,
   onToneSlip,
   startLearning,
+  suspendCard,
+  todayKey,
+  unsuspendCard,
   updateStreak,
 } from './srs.js';
 import {
@@ -28,6 +31,8 @@ import {
   saveState,
 } from './storage.js';
 import { choicesFor, estimateMinutes, nextItem, phaseLabel, replaceCard, sessionCounts } from './session.js';
+import { nextMissItem, practiceOnCorrect, practiceOnFail, practiceOnToneSlip, rotateMisses } from './misses.js';
+import { filterLibrary, dueLabel } from './library.js';
 
 const SEED = seedWordsFromCharacters(charactersData);
 const COVERAGE_LIST = coverageChars(charactersData);
@@ -53,7 +58,7 @@ function appendSlips(meta, slips) {
 
 export default function App() {
   const [words, setWords] = useState([]);
-  const [meta, setMeta] = useState({ streak: 0, lastSessionDate: null, toneSlipLog: [] });
+  const [meta, setMeta] = useState({ streak: 0, lastSessionDate: null, toneSlipLog: [], lastMisses: null });
   const [ready, setReady] = useState(false);
   const [screen, setScreen] = useState('home');
   const [item, setItem] = useState(null);
@@ -69,6 +74,8 @@ export default function App() {
   const [lookupQuery, setLookupQuery] = useState('');
   const [lookupDebounced, setLookupDebounced] = useState('');
   const [libraryQuery, setLibraryQuery] = useState('');
+  const [libraryFilter, setLibraryFilter] = useState('All');
+  const [detailCard, setDetailCard] = useState(null);
   const [notice, setNotice] = useState('');
   const fileRef = useRef(null);
 
@@ -83,6 +90,7 @@ export default function App() {
           streak: saved.meta?.streak || 0,
           lastSessionDate: saved.meta?.lastSessionDate || null,
           toneSlipLog: saved.meta?.toneSlipLog || [],
+          lastMisses: saved.meta?.lastMisses || null,
         });
       } else {
         setWords(initializeWords(SEED));
@@ -134,18 +142,65 @@ export default function App() {
   );
   const libraryHits = useMemo(() => {
     if (screen !== 'library') return [];
-    const q = libraryQuery.trim();
-    const list = [...words].sort((a, b) => a.word.localeCompare(b.word, 'zh'));
-    if (!q) return list;
-    return list.filter((w) => (
-      w.word.includes(q)
-      || (w.pinyin || '').toLowerCase().includes(q.toLowerCase())
-      || (w.meaning || '').toLowerCase().includes(q.toLowerCase())
+    return filterLibrary(words, libraryFilter, libraryQuery, nowTick);
+  }, [words, libraryFilter, libraryQuery, screen, nowTick]);
+
+  const hasLeftoverMisses = useMemo(() => {
+    if (!meta.lastMisses?.items?.length) return false;
+    if (meta.lastMisses.date !== todayKey(nowTick)) return false;
+    return meta.lastMisses.items.length > 0;
+  }, [meta.lastMisses, nowTick]);
+
+  function addMiss(id, reason) {
+    if (!session?.misses) return;
+    const existing = session.misses.find((m) => m.id === id);
+    const severity = { fail: 3, unknown: 3, 'unknown-intro': 1, 'tone-slip': 2 };
+    const newSeverity = severity[reason] || 0;
+    const oldSeverity = existing ? severity[existing.reason] || 0 : 0;
+    
+    if (!existing) {
+      setSession((prev) => ({
+        ...prev,
+        misses: [...prev.misses, { id, reason }],
+      }));
+    } else if (newSeverity > oldSeverity) {
+      setSession((prev) => ({
+        ...prev,
+        misses: prev.misses.map((m) => (m.id === id ? { id, reason } : m)),
+      }));
+    }
+
+    const now = Date.now();
+    setWords((prev) => prev.map((w) => 
+      w.id === id ? { ...w, lastMissedAt: todayKey(now), lastMissReason: reason } : w
     ));
-  }, [words, libraryQuery, screen]);
+  }
 
   function goNext(nextWords, nextSession) {
     const now = Date.now();
+    
+    if (nextSession.mode === 'misses') {
+      const nxt = nextMissItem(nextWords, nextSession.misses);
+      if (!nxt) {
+        setScreen('summary');
+        setSession(nextSession);
+        setItem(null);
+        return;
+      }
+      setWords(nextWords);
+      setItem(nxt);
+      setSession(nextSession);
+      setInput('');
+      setRevealed(false);
+      setFeedback(null);
+      setSlips([]);
+      setChoices([]);
+      if (nxt.type === 'listen-type') {
+        speakChinese(nxt.card.word);
+      }
+      return;
+    }
+
     if (now >= nextSession.endsAt) {
       finishSession(nextWords, nextSession);
       return;
@@ -181,6 +236,7 @@ export default function App() {
     unlockAudio();
     const now = Date.now();
     const nextSession = {
+      mode: 'daily',
       startedAt: now,
       endsAt: now + SESSION_MINUTES * 60 * 1000,
       intros: 0,
@@ -192,20 +248,52 @@ export default function App() {
       correct: 0,
       incorrect: 0,
       toneSlips: 0,
+      misses: [],
+    };
+    setScreen('session');
+    goNext(words, nextSession);
+  }
+
+  function startMissReview() {
+    unlockAudio();
+    if (!meta.lastMisses?.items?.length) return;
+    const nextSession = {
+      mode: 'misses',
+      startedAt: Date.now(),
+      endsAt: 0,
+      misses: [...meta.lastMisses.items],
+      reviewed: 0,
+      correct: 0,
+      incorrect: 0,
+      toneSlips: 0,
     };
     setScreen('session');
     goNext(words, nextSession);
   }
 
   function finishSession(nextWords, nextSession) {
-    const streakMeta = updateStreak(meta, Date.now());
-    const nextMeta = { ...meta, ...streakMeta };
-    setWords(nextWords);
-    setMeta(nextMeta);
-    persist(nextWords, nextMeta);
-    setSession(nextSession);
-    setScreen('summary');
-    setItem(null);
+    if (nextSession.mode === 'daily') {
+      const now = Date.now();
+      const streakMeta = updateStreak(meta, now);
+      const today = todayKey(now);
+      const lastMisses = nextSession.misses?.length > 0
+        ? { date: today, sessionStartedAt: nextSession.startedAt, items: nextSession.misses }
+        : (meta.lastMisses?.date === today ? meta.lastMisses : null);
+      
+      const nextMeta = { ...meta, ...streakMeta, lastMisses };
+      setWords(nextWords);
+      setMeta(nextMeta);
+      persist(nextWords, nextMeta);
+      setSession(nextSession);
+      setScreen('summary');
+      setItem(null);
+    } else {
+      setWords(nextWords);
+      persist(nextWords, meta);
+      setSession(nextSession);
+      setScreen('summary');
+      setItem(null);
+    }
   }
 
   function handleIntro(choice) {
@@ -218,6 +306,7 @@ export default function App() {
     } else if (choice === 'skip') {
       updated = markSkipped(item.card);
       patch.skipped = session.skipped + 1;
+      addMiss(item.card.id, 'unknown-intro');
     } else {
       updated = startLearning(item.card, now);
       patch.newLearned = session.newLearned + 1;
@@ -228,9 +317,65 @@ export default function App() {
   function grade(kind, nextSlips = []) {
     const now = Date.now();
     let updated;
+
+    if (session.mode === 'misses') {
+      const current = words.find((c) => c.id === item.card.id) || item.card;
+      const missReason = session.misses.find((m) => m.id === item.card.id)?.reason;
+      
+      if (kind === 'correct') {
+        const result = practiceOnCorrect(current, missReason, now);
+        updated = result.updated;
+        setFeedback('correct');
+        setSlips([]);
+        setRevealed(true);
+        setWords(replaceCard(words, updated));
+        speakChinese(item.card.word);
+        setSession({
+          ...session,
+          reviewed: session.reviewed + 1,
+          correct: session.correct + 1,
+          misses: result.shouldRemove 
+            ? session.misses.filter((m) => m.id !== item.card.id)
+            : rotateMisses(session.misses, item.card.id),
+        });
+      } else if (kind === 'tone-slip') {
+        const result = practiceOnToneSlip(current);
+        updated = result.updated;
+        setFeedback('tone-slip');
+        setSlips(nextSlips);
+        setRevealed(true);
+        setWords(replaceCard(words, updated));
+        speakChinese(item.card.word);
+        setSession({
+          ...session,
+          reviewed: session.reviewed + 1,
+          toneSlips: session.toneSlips + 1,
+          misses: rotateMisses(session.misses, item.card.id),
+        });
+      } else {
+        const result = practiceOnFail(current);
+        updated = result.updated;
+        setFeedback('incorrect');
+        setSlips([]);
+        setRevealed(true);
+        setWords(replaceCard(words, updated));
+        speakChinese(item.card.word);
+        setSession({
+          ...session,
+          reviewed: session.reviewed + 1,
+          incorrect: session.incorrect + 1,
+          misses: rotateMisses(session.misses, item.card.id),
+        });
+      }
+      return;
+    }
+
     if (kind === 'correct') updated = onCorrect(item.card, now);
     else if (kind === 'tone-slip') updated = onToneSlip(item.card, now, nextSlips);
     else updated = onFail(item.card, now);
+
+    const missReason = kind === 'incorrect' ? 'fail' : kind === 'tone-slip' ? 'tone-slip' : null;
+    if (missReason) addMiss(item.card.id, missReason);
 
     setFeedback(kind);
     setSlips(nextSlips);
@@ -253,6 +398,11 @@ export default function App() {
     grade(result.result, result.slips);
   }
 
+  function handleUnknown() {
+    addMiss(item.card.id, 'unknown');
+    grade('incorrect');
+  }
+
   function handleContinue() {
     const current = words.find((c) => c.id === item.card.id) || item.card;
     goNext(replaceCard(words, current), session);
@@ -262,7 +412,7 @@ export default function App() {
     await clearState();
     const fresh = initializeWords(SEED);
     setWords(fresh);
-    setMeta({ streak: 0, lastSessionDate: null, toneSlipLog: [] });
+    setMeta({ streak: 0, lastSessionDate: null, toneSlipLog: [], lastMisses: null });
     setScreen('home');
     setSession(null);
     setNotice('');
@@ -273,7 +423,21 @@ export default function App() {
     setWords(next);
     setNotice(exists
       ? `${entry.word} is already in your library.`
-      : `Added ${entry.word} to your library.`);
+      : `Added ${entry.word} to your library. It will show up as a new card.`);
+  }
+
+  function handleSuspend(card) {
+    setWords((prev) => prev.map((w) => (w.id === card.id ? suspendCard(w) : w)));
+    setDetailCard(null);
+  }
+
+  function handleUnsuspend(card) {
+    setWords((prev) => prev.map((w) => (w.id === card.id ? unsuspendCard(w) : w)));
+    setDetailCard(null);
+  }
+
+  function clearLastMisses() {
+    setMeta((prev) => ({ ...prev, lastMisses: null }));
   }
 
   async function handleImport(event) {
@@ -326,13 +490,18 @@ export default function App() {
   }
 
   if (screen === 'session' && item) {
-    const remaining = session ? session.endsAt - nowTick : 0;
+    const isMissMode = session?.mode === 'misses';
+    const remaining = isMissMode ? 0 : (session ? session.endsAt - nowTick : 0);
+    const leftCount = isMissMode 
+      ? session.misses.length 
+      : (session.reviewed + session.known + session.skipped + session.newLearned);
+    
     return (
       <div className="shell session">
         <header className="session-bar">
           <button className="text-btn" onClick={() => finishSession(words, session)} aria-label="End session">✕</button>
-          <span className="count">{session.reviewed + session.known + session.skipped + session.newLearned}</span>
-          <span className="clock">{formatMs(remaining)}</span>
+          <span className="count">{isMissMode ? `${leftCount} left` : leftCount}</span>
+          {!isMissMode && <span className="clock">{formatMs(remaining)}</span>}
         </header>
         {item.type === 'intro' && (
           <IntroCard card={item.card} canLearn={item.canLearn} onChoice={handleIntro} />
@@ -348,6 +517,8 @@ export default function App() {
             typed={input}
             onSubmit={handlePinyinSubmit}
             onContinue={handleContinue}
+            onUnknown={handleUnknown}
+            isMissMode={isMissMode}
           />
         )}
         {item.type === 'listen-type' && (
@@ -361,6 +532,8 @@ export default function App() {
             typed={input}
             onSubmit={handlePinyinSubmit}
             onContinue={handleContinue}
+            onUnknown={handleUnknown}
+            isMissMode={isMissMode}
           />
         )}
         {item.type === 'listen' && (
@@ -372,6 +545,8 @@ export default function App() {
             slips={slips}
             onPick={(word) => grade(word === item.card.word ? 'correct' : 'incorrect')}
             onContinue={handleContinue}
+            onUnknown={handleUnknown}
+            isMissMode={isMissMode}
           />
         )}
       </div>
@@ -390,12 +565,13 @@ export default function App() {
             className="search"
             value={lookupQuery}
             onChange={(e) => setLookupQuery(e.target.value)}
-            placeholder="汉字, ni3hao3, or english"
+            placeholder="Search 汉字, pinyin, or English."
             aria-label="Dictionary search"
             autoFocus
           />
           {!dict && !dictError && <p className="muted">Loading dictionary…</p>}
           {dictError && <p className="warn">Couldn’t load CC-CEDICT. Check your connection and refresh.</p>}
+          {dict && !lookupQuery.trim() && <p className="muted hint">Search 汉字, pinyin, or English.</p>}
           {dict && lookupQuery.trim() && lookupHits.length === 0 && (
             <p className="muted">No matches.</p>
           )}
@@ -405,7 +581,10 @@ export default function App() {
               return (
                 <li key={`${entry.word}:${entry.pinyin}`}>
                   <div>
-                    <p className="hit-word">{entry.word}</p>
+                    <div className="hit-row">
+                      <p className="hit-word">{entry.word}</p>
+                      <PlayButton className="play-hit" text={entry.word} label="▶" />
+                    </div>
                     <p className="hit-meta">{toMarked(entry.pinyin)} · {entry.meaning}</p>
                   </div>
                   {inLib ? (
@@ -417,17 +596,18 @@ export default function App() {
               );
             })}
           </ul>
-          {notice && <p className="muted">{notice}</p>}
+          {notice && <p className="notice">{notice}</p>}
         </section>
       </div>
     );
   }
 
   if (screen === 'library') {
+    const filters = ['All', 'Due', 'Learning', 'Missed today', 'Added', 'Seed', 'Skipped', 'Suspended'];
     return (
       <div className="shell">
         <header className="top">
-          <button className="text-btn back" onClick={() => setScreen('home')}>← Home</button>
+          <button className="text-btn back" onClick={() => { setScreen('home'); setLibraryFilter('All'); setLibraryQuery(''); }}>← Home</button>
           <p className="brand">Library · {words.length} words</p>
         </header>
         <section className="panel">
@@ -438,18 +618,56 @@ export default function App() {
             placeholder="Filter your words"
             aria-label="Filter library"
           />
-          <ul className="hits library">
-            {libraryHits.map((card) => (
-              <li key={card.id}>
-                <div>
-                  <p className="hit-word">{card.word}</p>
-                  <p className="hit-meta">{toMarked(card.pinyin)} · {card.meaning}</p>
-                </div>
-                <span className={`pill ${card.phase}`}>{phaseLabel(card.phase)}</span>
-              </li>
+          <div className="filter-chips">
+            {filters.map((f) => (
+              <button
+                key={f}
+                className={`chip ${libraryFilter === f ? 'chip-active' : ''}`}
+                onClick={() => setLibraryFilter(f)}
+              >
+                {f}
+              </button>
             ))}
+          </div>
+          <ul className="hits library">
+            {libraryHits.map((card) => {
+              const today = todayKey(nowTick);
+              const missedToday = card.lastMissedAt === today;
+              return (
+                <li key={card.id} onClick={() => setDetailCard(card)}>
+                  <div>
+                    <p className="hit-word">{card.word}</p>
+                    <p className="hit-meta">{toMarked(card.pinyin)} · {card.meaning}</p>
+                    <p className="hit-line3">
+                      {phaseLabel(card.phase)} · {dueLabel(card, nowTick)} · {card.source}
+                      {missedToday && ' · missed'}
+                    </p>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </section>
+        {detailCard && (
+          <div className="sheet-overlay" onClick={() => setDetailCard(null)}>
+            <div className="sheet" onClick={(e) => e.stopPropagation()}>
+              <div className="sheet-header">
+                <p className="sheet-word">{detailCard.word}</p>
+                <button className="text-btn" onClick={() => setDetailCard(null)}>✕</button>
+              </div>
+              <p className="sheet-meta">{toMarked(detailCard.pinyin)}</p>
+              <p className="sheet-meaning">{detailCard.meaning}</p>
+              <PlayButton className="ghost" text={detailCard.word} label="Play word" />
+              <div className="sheet-actions">
+                {detailCard.suspended ? (
+                  <button className="secondary" onClick={() => handleUnsuspend(detailCard)}>Unsuspend</button>
+                ) : (
+                  <button className="secondary" onClick={() => handleSuspend(detailCard)}>Suspend</button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -465,6 +683,11 @@ export default function App() {
           Start practice
           <span>about {minutes} min</span>
         </button>
+        {hasLeftoverMisses && (
+          <button className="ghost leftover-cta" onClick={startMissReview}>
+            Review misses · {meta.lastMisses.items.length} left
+          </button>
+        )}
         <ul className="stats">
           <li><strong>{meta.streak}</strong> streak</li>
           <li><strong>{counts.due}</strong> due</li>
@@ -578,13 +801,16 @@ function PinyinForm({ input, setInput, onSubmit }) {
   );
 }
 
-function ReadCard({ card, input, setInput, revealed, feedback, slips, typed, onSubmit, onContinue }) {
+function ReadCard({ card, input, setInput, revealed, feedback, slips, typed, onSubmit, onContinue, onUnknown, isMissMode }) {
   return (
     <article className="card">
       <p className="prompt">Type the pinyin</p>
       <Han word={card.word} />
       {!revealed ? (
-        <PinyinForm input={input} setInput={setInput} onSubmit={onSubmit} />
+        <>
+          <PinyinForm input={input} setInput={setInput} onSubmit={onSubmit} />
+          {!isMissMode && <button className="text-btn dont-know" onClick={onUnknown}>I don't know this</button>}
+        </>
       ) : (
         <Reveal card={card} feedback={feedback} slips={slips} typed={typed} onContinue={onContinue} />
       )}
@@ -592,13 +818,16 @@ function ReadCard({ card, input, setInput, revealed, feedback, slips, typed, onS
   );
 }
 
-function ListenTypeCard({ card, input, setInput, revealed, feedback, slips, typed, onSubmit, onContinue }) {
+function ListenTypeCard({ card, input, setInput, revealed, feedback, slips, typed, onSubmit, onContinue, onUnknown, isMissMode }) {
   return (
     <article className="card">
       <p className="prompt">Listen, then type the pinyin</p>
       <PlayButton className="speaker" text={card.word} label="Play" />
       {!revealed ? (
-        <PinyinForm input={input} setInput={setInput} onSubmit={onSubmit} />
+        <>
+          <PinyinForm input={input} setInput={setInput} onSubmit={onSubmit} />
+          {!isMissMode && <button className="text-btn dont-know" onClick={onUnknown}>I don't know this</button>}
+        </>
       ) : (
         <Reveal card={card} feedback={feedback} slips={slips} typed={typed} onContinue={onContinue} />
       )}
@@ -606,19 +835,22 @@ function ListenTypeCard({ card, input, setInput, revealed, feedback, slips, type
   );
 }
 
-function ListenCard({ card, choices, revealed, feedback, slips, onPick, onContinue }) {
+function ListenCard({ card, choices, revealed, feedback, slips, onPick, onContinue, onUnknown, isMissMode }) {
   return (
     <article className="card">
       <p className="prompt">Listen, then pick the word</p>
       <PlayButton className="speaker" text={card.word} label="Play" />
       {!revealed ? (
-        <div className="choices">
-          {choices.map((c) => (
-            <button type="button" key={c.id} className="choice word-choice" onClick={() => onPick(c.word)}>
-              {c.word}
-            </button>
-          ))}
-        </div>
+        <>
+          <div className="choices">
+            {choices.map((c) => (
+              <button type="button" key={c.id} className="choice word-choice" onClick={() => onPick(c.word)}>
+                {c.word}
+              </button>
+            ))}
+          </div>
+          {!isMissMode && <button className="text-btn dont-know" onClick={onUnknown}>I don't know this</button>}
+        </>
       ) : (
         <Reveal card={card} feedback={feedback} slips={slips} onContinue={onContinue} />
       )}

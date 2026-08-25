@@ -20,7 +20,11 @@ Open the app, tap **Start practice**. There is no drill menu.
 
 New words cap: 10/day. Known words are buried (21 days). Skipped words stay out of the way.
 
-Look up any word in the bundled dictionary and add it to your library. Export/import a JSON backup from the home screen.
+After the session, **Review misses** lets you drill words you missed (fail, tone-slip, or unknown) until correct. Miss review has no timer, no intros, and no multiple choice.
+
+Look up any word in the bundled dictionary (play audio per hit) and add it to your library. Filter the library by All / Due / Learning / Missed today / Added / Seed / Skipped / Suspended. Tap a word to suspend/unsuspend.
+
+Export/import a JSON backup from the home screen.
 
 ## Progress
 

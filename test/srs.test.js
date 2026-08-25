@@ -7,7 +7,11 @@ import {
   startLearning,
   markKnown,
   dueCards,
+  isDue,
   learnedNewCount,
+  suspendCard,
+  unseenCards,
+  unsuspendCard,
   LEARN_STEPS_MS,
   TONE_SLIP_MS,
 } from '../src/srs.js';
@@ -81,4 +85,43 @@ test('tone slip is not a lapse and comes back sooner', () => {
   assert.equal(card.due, now + TONE_SLIP_MS);
   assert.equal(dueCards([card], now).length, 0);
   assert.equal(dueCards([card], now + TONE_SLIP_MS).length, 1);
+});
+
+test('suspendCard sets suspended flag', () => {
+  const card = { id: 'x', word: '你好', phase: 'review', suspended: false };
+  const suspended = suspendCard(card);
+  assert.equal(suspended.suspended, true);
+});
+
+test('unsuspendCard removes suspended flag', () => {
+  const card = { id: 'y', word: '你好', phase: 'review', suspended: true };
+  const unsuspended = unsuspendCard(card);
+  assert.equal(unsuspended.suspended, false);
+});
+
+test('suspended cards are not due', () => {
+  const now = Date.now();
+  const card = { id: 'z', phase: 'review', due: now - 1000, suspended: true };
+  assert.equal(isDue(card, now), false);
+});
+
+test('suspended cards are not in unseenCards', () => {
+  const cards = [
+    { id: 'a', word: '你好', phase: 'new', suspended: false },
+    { id: 'b', word: '再见', phase: 'new', suspended: true },
+  ];
+  const unseen = unseenCards(cards);
+  assert.equal(unseen.length, 1);
+  assert.equal(unseen[0].id, 'a');
+});
+
+test('suspended cards are absent from dueCards', () => {
+  const now = Date.now();
+  const cards = [
+    { id: 'c', phase: 'review', due: now - 1000, suspended: false },
+    { id: 'd', phase: 'review', due: now - 1000, suspended: true },
+  ];
+  const due = dueCards(cards, now);
+  assert.equal(due.length, 1);
+  assert.equal(due[0].id, 'c');
 });
