@@ -34,6 +34,8 @@ A 字 counts as known after it has been read correctly in two different words, o
 
 Seed library: unique example words from 483 simplified 字 (课标《识字、写字教学基本字表》300 + high-frequency G1–2 extras).
 
+Optional teacher seed: `public/learner-profile.json` (fetched on boot via the Vite base path). When present it biases placement and the daily queue — `knownChars` marks fully-covered new words as already-read, `suggestedNext` / `weakChars` float those 字 earlier, `extraVocab` merges teacher words (`source: teacher`), and `mixups` prefer partner distractors on listen multiple-choice. The profile is seed/bias only; IndexedDB progress wins after the first review. Missing file → no change.
+
 Dictionary: a compact copy of [CC-CEDICT](https://www.mdbg.net/chinese/dictionary?page=cc-cedict) (~121k entries), [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). See `public/CEDICT-LICENSE.txt`.
 
 Progress lives in IndexedDB (`koudaozi`). Older `koudaozi_v2` character progress is migrated onto the example-word cards.
