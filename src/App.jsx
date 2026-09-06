@@ -33,6 +33,7 @@ import {
 import { choicesFor, estimateMinutes, nextItem, phaseLabel, replaceCard, sessionCounts } from './session.js';
 import { nextMissItem, practiceOnCorrect, practiceOnFail, practiceOnToneSlip, rotateMisses } from './misses.js';
 import { filterLibrary, dueLabel } from './library.js';
+import { applyLearnerProfile, loadLearnerProfile } from './learnerProfile.js';
 
 const SEED = seedWordsFromCharacters(charactersData);
 const COVERAGE_LIST = coverageChars(charactersData);
@@ -77,15 +78,26 @@ export default function App() {
   const [libraryFilter, setLibraryFilter] = useState('All');
   const [detailCard, setDetailCard] = useState(null);
   const [notice, setNotice] = useState('');
+  const [profile, setProfile] = useState(null);
   const fileRef = useRef(null);
+
+  async function ingestProfile(wordsIn, nextProfile) {
+    if (!nextProfile) return wordsIn;
+    return applyLearnerProfile(wordsIn, nextProfile);
+  }
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const saved = await loadState(SEED);
+      const [saved, nextProfile] = await Promise.all([
+        loadState(SEED),
+        loadLearnerProfile(),
+      ]);
       if (cancelled) return;
+      setProfile(nextProfile);
       if (saved?.words?.length) {
-        setWords(saved.words);
+        const merged = await ingestProfile(saved.words, nextProfile);
+        setWords(merged);
         setMeta({
           streak: saved.meta?.streak || 0,
           lastSessionDate: saved.meta?.lastSessionDate || null,
@@ -93,7 +105,8 @@ export default function App() {
           lastMisses: saved.meta?.lastMisses || null,
         });
       } else {
-        setWords(initializeWords(SEED));
+        const fresh = initializeWords(SEED);
+        setWords(await ingestProfile(fresh, nextProfile));
       }
       setReady(true);
     })();
@@ -210,6 +223,7 @@ export default function App() {
       intros: nextSession.intros,
       learnedNew: learnedNewCount(nextWords, now),
       promptIndex: nextSession.promptIndex,
+      profile,
     };
     const nxt = nextItem(nextWords, ctx, now);
     if (!nxt) {
@@ -226,7 +240,7 @@ export default function App() {
     setRevealed(false);
     setFeedback(null);
     setSlips([]);
-    setChoices(nxt.type === 'listen' ? choicesFor(nxt.card, nextWords) : []);
+    setChoices(nxt.type === 'listen' ? choicesFor(nxt.card, nextWords, 4, profile) : []);
     if (nxt.type === 'listen' || nxt.type === 'intro' || nxt.type === 'listen-type') {
       speakChinese(nxt.card.word);
     }
@@ -410,12 +424,25 @@ export default function App() {
 
   async function handleReset() {
     await clearState();
-    const fresh = initializeWords(SEED);
+    const fresh = await ingestProfile(initializeWords(SEED), profile);
     setWords(fresh);
     setMeta({ streak: 0, lastSessionDate: null, toneSlipLog: [], lastMisses: null });
     setScreen('home');
     setSession(null);
     setNotice('');
+  }
+
+  async function handleReloadProfile() {
+    const nextProfile = await loadLearnerProfile();
+    setProfile(nextProfile);
+    if (!nextProfile) {
+      setNotice('No teacher profile found.');
+      return;
+    }
+    setWords((prev) => applyLearnerProfile(prev, nextProfile));
+    setNotice(
+      `Teacher profile loaded · ${nextProfile.knownChars?.length || 0} known / ${nextProfile.weakChars?.length || 0} weak`,
+    );
   }
 
   function handleAdd(entry) {
@@ -699,6 +726,13 @@ export default function App() {
         <p className="muted">
           Characters known {coverage.known} / {coverage.total} · from {counts.known} words in your library ({counts.total} total)
         </p>
+        {profile && (
+          <p className="muted profile-line">
+            Teacher profile · {profile.knownChars?.length || 0} known / {profile.weakChars?.length || 0} weak
+            {' · '}
+            <button type="button" className="text-btn inline" onClick={handleReloadProfile}>Reload</button>
+          </p>
+        )}
         {notice && <p className="muted">{notice}</p>}
       </section>
       <nav className="home-nav">

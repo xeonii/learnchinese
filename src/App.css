@@ -152,6 +152,18 @@ footer {
   padding: 8px;
 }
 
+.text-btn.inline {
+  display: inline;
+  padding: 0;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.profile-line {
+  margin-top: 8px;
+}
+
 .session-bar {
   display: grid;
   grid-template-columns: 40px 1fr 40px;

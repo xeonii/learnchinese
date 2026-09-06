@@ -6,6 +6,7 @@ import {
   unseenCards,
 } from './srs.js';
 import { syllableKey } from './pinyin.js';
+import { mixupPartners, sortByProfile } from './learnerProfile.js';
 
 export const LOOKALIKES = [
   ['人', '入', '八'],
@@ -59,7 +60,7 @@ export function nextItem(cards, ctx, now = Date.now()) {
     return promptFor(dueNow[0], ctx);
   }
 
-  const unseen = unseenCards(cards);
+  const unseen = sortByProfile(unseenCards(cards), ctx.profile);
   const canIntro = ctx.intros < MAX_INTROS_PER_SESSION && unseen.length > 0;
   if (canIntro) {
     return {
@@ -99,7 +100,7 @@ export function promptFor(card, ctx) {
   return { type: 'read', card };
 }
 
-export function choicesFor(card, allCards, n = 4) {
+export function choicesFor(card, allCards, n = 4, profile = null) {
   const others = allCards.filter((c) => c.id !== card.id && c.word !== card.word);
   const picked = [];
   const add = (candidate) => {
@@ -108,6 +109,12 @@ export function choicesFor(card, allCards, n = 4) {
     if (picked.length >= n - 1) return;
     picked.push(candidate);
   };
+
+  // Teacher mixups: prefer the partner 字 as a distractor (e.g. 是 ↔ 在).
+  const partners = mixupPartners(card.word, profile);
+  for (const partner of partners) {
+    others.filter((c) => c.word.includes(partner)).forEach(add);
+  }
 
   const key = syllableKey(card.pinyin);
   others.filter((c) => syllableKey(c.pinyin) === key).forEach(add);
