@@ -48,14 +48,15 @@ describe('library', () => {
     assert.equal(filtered[0].id, 'a');
   });
 
-  it('filterLibrary Added returns dict-sourced cards', () => {
+  it('filterLibrary Added returns dict- and story-sourced cards', () => {
     const cards = [
       { id: 'a', word: '你好', source: 'seed' },
       { id: 'b', word: '再见', source: 'dict' },
+      { id: 'c', word: '满', source: 'story' },
     ];
     const filtered = filterLibrary(cards, 'Added', '', now);
-    assert.equal(filtered.length, 1);
-    assert.equal(filtered[0].source, 'dict');
+    assert.equal(filtered.length, 2);
+    assert.deepEqual(filtered.map((c) => c.source).sort(), ['dict', 'story']);
   });
 
   it('filterLibrary Seed returns seed cards', () => {

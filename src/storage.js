@@ -78,7 +78,7 @@ export function migrateFromV2(old, seed) {
   };
 }
 
-export function addDictWord(words, entry) {
+export function addDictWord(words, entry, options = {}) {
   if (alreadyInLibrary(words, entry)) {
     const next = words.map((w) => (
       w.word === entry.word && entry.meaning && w.meaning !== entry.meaning
@@ -87,6 +87,7 @@ export function addDictWord(words, entry) {
     ));
     return { words: next, added: null, exists: true };
   }
+  const source = options.source || entry.source || 'dict';
   const card = initializeWords([{
     id: makeWordId(entry.word, entry.pinyin, words),
     word: entry.word,
@@ -95,7 +96,7 @@ export function addDictWord(words, entry) {
     chars: hanziOf(entry.word),
     tier: 0,
     sortIndex: -Date.now(),
-    source: 'dict',
+    source,
   }])[0];
   return { words: [...words, card], added: card, exists: false };
 }

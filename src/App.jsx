@@ -33,6 +33,14 @@ import {
 import { choicesFor, estimateMinutes, nextItem, phaseLabel, replaceCard, sessionCounts } from './session.js';
 import { nextMissItem, practiceOnCorrect, practiceOnFail, practiceOnToneSlip, rotateMisses } from './misses.js';
 import { filterLibrary, dueLabel } from './library.js';
+import {
+  approxHanLength,
+  entryFromStoryLookup,
+  isDueToken,
+  loadDaily,
+  lookupStoryToken,
+  segmentStory,
+} from './daily.js';
 
 const SEED = seedWordsFromCharacters(charactersData);
 const COVERAGE_LIST = coverageChars(charactersData);
@@ -77,6 +85,10 @@ export default function App() {
   const [libraryFilter, setLibraryFilter] = useState('All');
   const [detailCard, setDetailCard] = useState(null);
   const [notice, setNotice] = useState('');
+  const [daily, setDaily] = useState(null);
+  const [dailyStatus, setDailyStatus] = useState('idle'); // idle | loading | ready | empty
+  const [storyKind, setStoryKind] = useState(null); // null | short | long
+  const [storyTap, setStoryTap] = useState(null);
   const fileRef = useRef(null);
 
   useEffect(() => {
@@ -133,6 +145,25 @@ export default function App() {
     return () => clearInterval(id);
   }, [screen, session]);
 
+  useEffect(() => {
+    if (screen !== 'story' && screen !== 'story-read') return undefined;
+    if (dailyStatus === 'ready' || dailyStatus === 'empty') return undefined;
+    let cancelled = false;
+    setDailyStatus('loading');
+    loadDaily()
+      .then((data) => {
+        if (cancelled) return;
+        setDaily(data);
+        setDailyStatus(data ? 'ready' : 'empty');
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setDaily(null);
+        setDailyStatus('empty');
+      });
+    return () => { cancelled = true; };
+  }, [screen, dailyStatus]);
+
   const counts = useMemo(() => sessionCounts(words, nowTick), [words, nowTick]);
   const minutes = estimateMinutes(words, nowTick);
   const coverage = useMemo(() => characterCoverage(words, COVERAGE_LIST), [words]);
@@ -144,6 +175,12 @@ export default function App() {
     if (screen !== 'library') return [];
     return filterLibrary(words, libraryFilter, libraryQuery, nowTick);
   }, [words, libraryFilter, libraryQuery, screen, nowTick]);
+
+  const storyText = storyKind && daily?.[storyKind]?.text ? daily[storyKind].text : '';
+  const storyTokens = useMemo(
+    () => (screen === 'story-read' && storyText ? segmentStory(storyText, dict) : []),
+    [screen, storyText, dict],
+  );
 
   const hasLeftoverMisses = useMemo(() => {
     if (!meta.lastMisses?.items?.length) return false;
@@ -418,12 +455,42 @@ export default function App() {
     setNotice('');
   }
 
-  function handleAdd(entry) {
-    const { words: next, exists } = addDictWord(words, entry);
+  function handleAdd(entry, options = {}) {
+    const { words: next, exists } = addDictWord(words, entry, options);
     setWords(next);
     setNotice(exists
       ? `${entry.word} is already in your library.`
-      : `Added ${entry.word} to your library. It will show up as a new card.`);
+      : options.shortNotice
+        ? `Added ${entry.word} to your library.`
+        : `Added ${entry.word} to your library. It will show up as a new card.`);
+  }
+
+  function openStory() {
+    setNotice('');
+    setStoryKind(null);
+    setStoryTap(null);
+    setDailyStatus(daily ? 'ready' : 'idle');
+    setScreen('story');
+  }
+
+  function pickStory(kind) {
+    setStoryKind(kind);
+    setStoryTap(null);
+    setNotice('');
+    setScreen('story-read');
+  }
+
+  function handleStoryTap(tokenText) {
+    unlockAudio();
+    const info = lookupStoryToken(tokenText, dict);
+    setStoryTap(info);
+  }
+
+  function handleDidntKnowStory() {
+    if (!storyTap?.word) return;
+    const entry = entryFromStoryLookup(storyTap);
+    handleAdd(entry, { source: 'story', shortNotice: true });
+    setStoryTap(null);
   }
 
   function handleSuspend(card) {
@@ -672,6 +739,106 @@ export default function App() {
     );
   }
 
+  if (screen === 'story' || screen === 'story-read') {
+    return (
+      <div className="shell">
+        <header className="top">
+          <button
+            className="text-btn back"
+            onClick={() => {
+              if (screen === 'story-read') {
+                setScreen('story');
+                setStoryKind(null);
+                setStoryTap(null);
+                return;
+              }
+              setScreen('home');
+              setNotice('');
+            }}
+          >
+            ← {screen === 'story-read' ? 'Story length' : 'Home'}
+          </button>
+          <p className="brand">Today’s story</p>
+        </header>
+
+        {dailyStatus === 'loading' && (
+          <section className="panel">
+            <p className="muted">Loading…</p>
+          </section>
+        )}
+
+        {dailyStatus === 'empty' && (
+          <section className="panel">
+            <p className="muted">No story for today yet.</p>
+          </section>
+        )}
+
+        {dailyStatus === 'ready' && screen === 'story' && (
+          <section className="panel story-pick">
+            <p className="lede story-lede">Pick a length</p>
+            <button className="ghost story-choice" onClick={() => pickStory('short')}>
+              Short
+              <span>~{approxHanLength(daily.short?.text)} 字</span>
+            </button>
+            <button className="ghost story-choice" onClick={() => pickStory('long')}>
+              Long
+              <span>~{approxHanLength(daily.long?.text)} 字</span>
+            </button>
+          </section>
+        )}
+
+        {dailyStatus === 'ready' && screen === 'story-read' && storyKind && (
+          <section className="panel story-read">
+            {daily[storyKind]?.title ? <h1 className="story-title">{daily[storyKind].title}</h1> : null}
+            <p className="story-hint muted">Tap a 字 to see pinyin</p>
+            <div className="story-text" lang="zh-Hans">
+              {storyTokens.map((token, idx) => {
+                if (token.kind !== 'han') {
+                  return <span key={`o-${idx}`} className="story-other">{token.text}</span>;
+                }
+                const due = isDueToken(token.text, daily.dueChars);
+                return (
+                  <button
+                    type="button"
+                    key={`h-${idx}-${token.text}`}
+                    className={`story-han${due ? ' story-due' : ''}`}
+                    onClick={() => handleStoryTap(token.text)}
+                  >
+                    {token.text}
+                  </button>
+                );
+              })}
+            </div>
+            {notice && <p className="notice">{notice}</p>}
+          </section>
+        )}
+
+        {storyTap && (
+          <div className="sheet-overlay" onClick={() => setStoryTap(null)}>
+            <div className="sheet" onClick={(e) => e.stopPropagation()}>
+              <div className="sheet-header">
+                <p className="sheet-word">{storyTap.word}</p>
+                <button className="text-btn" onClick={() => setStoryTap(null)}>✕</button>
+              </div>
+              <p className="sheet-meta">
+                {storyTap.known && storyTap.pinyin
+                  ? toMarked(storyTap.pinyin)
+                  : 'Unknown — not in dictionary'}
+              </p>
+              {storyTap.meaning && <p className="sheet-meaning">{storyTap.meaning}</p>}
+              <PlayButton className="ghost" text={storyTap.word} label="Play" />
+              <div className="sheet-actions">
+                <button className="secondary" onClick={handleDidntKnowStory}>
+                  I didn’t know this
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="shell">
       <header className="top">
@@ -702,6 +869,7 @@ export default function App() {
         {notice && <p className="muted">{notice}</p>}
       </section>
       <nav className="home-nav">
+        <button className="ghost" onClick={openStory}>Today’s story</button>
         <button className="ghost" onClick={() => { setNotice(''); setScreen('lookup'); }}>Look up a word</button>
         <button className="ghost" onClick={() => setScreen('library')}>Library</button>
       </nav>

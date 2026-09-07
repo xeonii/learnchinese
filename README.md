@@ -24,6 +24,8 @@ After the session, **Review misses** lets you drill words you missed (fail, tone
 
 Look up any word in the bundled dictionary (play audio per hit) and add it to your library. Filter the library by All / Due / Learning / Missed today / Added / Seed / Skipped / Suspended. Tap a word to suspend/unsuspend.
 
+**Today’s story** (sample): each day ships a short (~30–50 字) and long (~100 字) reading under `public/daily/`. Tap a 字 or segmented word for pinyin + gloss from CC-CEDICT, play Mandarin audio, and tap **I didn’t know this** to add it to the same library/SRS path (`source: story`). Recycle targets in `dueChars` get a light underline — not a quiz. Missing daily JSON shows a quiet empty state.
+
 Export/import a JSON backup from the home screen.
 
 ## Progress

@@ -13,7 +13,7 @@ export function filterLibrary(cards, filter, searchQuery, now = Date.now()) {
     const today = todayKey(now);
     filtered = cards.filter((c) => c.lastMissedAt === today);
   } else if (filter === 'Added') {
-    filtered = cards.filter((c) => c.source === 'dict');
+    filtered = cards.filter((c) => c.source === 'dict' || c.source === 'story');
   } else if (filter === 'Seed') {
     filtered = cards.filter((c) => c.source === 'seed');
   } else if (filter === 'Skipped') {
