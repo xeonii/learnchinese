@@ -5,11 +5,13 @@ import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
 import {
   approxHanLength,
+  briefGloss,
   entryFromStoryLookup,
   isoDate,
   loadDaily,
   longestMatchAt,
   lookupStoryToken,
+  pickBestEntry,
   segmentStory,
 } from '../src/daily.js';
 import { addDictWord, initializeWords } from '../src/storage.js';
@@ -89,6 +91,15 @@ describe('daily story', () => {
     const info = lookupStoryToken('𡨸', miniDict);
     assert.equal(info.known, false);
     assert.equal(info.pinyin, null);
+  });
+
+  it('prefers common gloss over proper-noun senses', () => {
+    const best = pickBestEntry([
+      { word: '满', pinyin: 'man3', meaning: 'Manchu ethnic group' },
+      { word: '满', pinyin: 'man3', meaning: 'full; filled; packed' },
+    ]);
+    assert.equal(best.meaning, 'full; filled; packed');
+    assert.equal(briefGloss(best.meaning), 'full');
   });
 
   it('I didn’t know this adds the word to the library via story source', () => {

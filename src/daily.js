@@ -68,22 +68,41 @@ export function isDueToken(tokenText, dueChars) {
   return [...tokenText].some((ch) => dueChars.includes(ch));
 }
 
+/** Prefer ordinary glosses over proper-noun / surname senses. */
+export function pickBestEntry(hits) {
+  if (!hits?.length) return null;
+  if (hits.length === 1) return hits[0];
+  const scored = hits.map((entry) => {
+    const m = String(entry.meaning || '');
+    let score = 0;
+    if (/^[a-z]/.test(m)) score += 20;
+    if (/^(surname|variant of|see |used in)/i.test(m)) score -= 30;
+    if (/ethnic|Manchu|place name|name of/i.test(m)) score -= 20;
+    if (m.length && m.length < 48) score += 5;
+    return { entry, score };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  return scored[0].entry;
+}
+
+export function briefGloss(meaning) {
+  const raw = String(meaning || '').trim();
+  if (!raw) return '';
+  return raw.split(/[;/]/)[0].trim();
+}
+
 export function lookupStoryToken(tokenText, dict) {
   const word = String(tokenText || '');
   if (!word) return { word: '', pinyin: null, meaning: null, known: false };
   const hits = lookupExact(dict, word);
-  if (hits.length) {
-    const best = hits[0];
+  const best = pickBestEntry(hits);
+  if (best) {
     return {
       word: best.word,
       pinyin: best.pinyin,
-      meaning: best.meaning,
+      meaning: briefGloss(best.meaning),
       known: true,
     };
-  }
-  // Prefer a multi-char dict hit already segmented; else try single-char glosses.
-  if (word.length === 1) {
-    return { word, pinyin: null, meaning: null, known: false };
   }
   return { word, pinyin: null, meaning: null, known: false };
 }
