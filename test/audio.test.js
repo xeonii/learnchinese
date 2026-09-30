@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { chineseAudioUrl, isChineseText } from '../src/audio.js';
+import { chineseAudioUrl, isChineseText } from '../src/lib/audio.js';
 
 test('audio URLs encode 汉字, never pinyin', () => {
   const url = chineseAudioUrl('你好');

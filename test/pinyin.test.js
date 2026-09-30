@@ -1,4 +1,4 @@
-import { pinyinMatches, toCanonical, gradePinyin, toMarked, syllableKey } from '../src/pinyin.js';
+import { pinyinMatches, toCanonical, gradePinyin, toMarked, syllableKey } from '../src/lib/pinyin.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
