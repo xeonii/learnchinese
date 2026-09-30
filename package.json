@@ -7,8 +7,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "node --test test/*.test.js",
-    "data": "python3 scripts/build_chars.py",
-    "data:cedict": "python3 scripts/build_cedict.py"
+    "data:cedict": "python3 scripts/build_cedict.py",
+    "content": "node scripts/build_deck.mjs && node scripts/build_stories.mjs",
+    "stories": "node scripts/build_stories.mjs"
   },
   "dependencies": {
     "react": "^18.2.0",

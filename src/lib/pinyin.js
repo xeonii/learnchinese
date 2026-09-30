@@ -150,3 +150,29 @@ function markSyllable(syl) {
   const marks = MARKS[ch] || MARKS.v;
   return body.slice(0, idx) + marks[tone] + body.slice(idx + 1);
 }
+
+const MARKED_VOWEL = /[āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜńňǹḿ]/;
+const TONES = {
+  1: 'āēīōūǖ', 2: 'áéíóúǘńḿ', 3: 'ǎěǐǒǔǚň', 4: 'àèìòùǜǹ',
+};
+
+/** "ni3 hao3" or "ni3hao3" → "nǐ hǎo" (space-separated syllables). */
+export function numberedToMarked(numbered) {
+  const syls = String(numbered || '').toLowerCase().replace(/u:/g, 'v').match(/[a-zü]+[0-5]?/g) || [];
+  return syls.map((s) => toMarked(/\d$/.test(s) ? s : `${s}5`)).join(' ');
+}
+
+export function toneOfMarked(syllable) {
+  const ch = String(syllable).match(MARKED_VOWEL)?.[0];
+  if (!ch) return 5;
+  for (const [tone, set] of Object.entries(TONES)) if (set.includes(ch)) return Number(tone);
+  return 5;
+}
+
+/** Split display pinyin into [{ text, tone }]. Spaces separate syllables. */
+export function pinyinSyllables(pinyin) {
+  const s = String(pinyin || '').trim();
+  if (!s) return [];
+  const parts = s.includes(' ') ? s.split(/\s+/) : [s];
+  return parts.map((text) => ({ text, tone: toneOfMarked(text) }));
+}

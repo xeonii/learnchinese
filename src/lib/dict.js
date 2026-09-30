@@ -122,17 +122,22 @@ export function searchDict(dict, query, limit = 40) {
   return scored.slice(0, limit).map((row) => row.entry);
 }
 
-export function alreadyInLibrary(words, entry) {
-  const key = toCanonical(entry.pinyin);
-  return words.some((w) => w.word === entry.word && toCanonical(w.pinyin) === key);
+/** Prefer ordinary glosses over proper-noun / surname senses. */
+export function pickBestEntry(hits) {
+  if (!hits?.length) return null;
+  const scored = hits.map((entry) => {
+    const m = String(entry.meaning || '');
+    let score = 0;
+    if (/^[a-z]/.test(m)) score += 20;
+    if (/^(surname|variant of|old variant|see |used in)/i.test(m)) score -= 30;
+    if (/ethnic|place name|name of/i.test(m)) score -= 20;
+    if (/^[A-Z]/.test(entry.pinyin || '')) score -= 20;
+    return { entry, score };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  return scored[0].entry;
 }
 
-export function makeWordId(word, pinyin, words) {
-  const taken = new Set(words.map((w) => w.id));
-  if (!taken.has(word)) return word;
-  const keyed = `${word}:${toCanonical(pinyin)}`;
-  if (!taken.has(keyed)) return keyed;
-  let n = 2;
-  while (taken.has(`${keyed}:${n}`)) n += 1;
-  return `${keyed}:${n}`;
+export function briefGloss(meaning) {
+  return String(meaning || '').split(/[;/]/).slice(0, 2).join(';').trim();
 }
